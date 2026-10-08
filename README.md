@@ -1,4 +1,4 @@
-# 🛠️ Meshal Fix Toolkit
+# 🛠️ MeshalFix 
 
 A practical Windows 10/11 repair toolkit designed to help diagnose and fix common Windows and PC issues through simple, menu-driven tools.
 
