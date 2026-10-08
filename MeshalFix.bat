@@ -54,6 +54,13 @@ set "DDU_URL=https://download.wagnardsoft.com/DDU/DDU%%20v18.1.6.1_setup.exe"
 set "DDU_PAGE=https://www.wagnardsoft.com/display-driver-uninstaller-ddu"
 set "NVCI_URL=https://www.techpowerup.com/download/techpowerup-nvcleanstall/"
 set "NVCI_ALT_URL=https://sourceforge.net/projects/nvcleanstall/files/NVCleanstall_1.19.0.exe/download"
+rem  DDU tutorial images (Gaming Fixes, option 9) - raw links from the GitHub repository (Tutorial folder)
+set "DDU_GUIDE_BASE=https://raw.githubusercontent.com/iMeshall/MeshalFix/main/Tutorial"
+set "DDU_GUIDE_AR_URL=%DDU_GUIDE_BASE%/Arabic.png"
+set "DDU_GUIDE_EN_URL=%DDU_GUIDE_BASE%/Englisgh.png"
+rem  Official driver pages for AMD and Intel cards (Gaming Fixes, option 9, step 2)
+set "AMD_DRV_URL=https://www.amd.com/en/support/download/drivers.html"
+set "INTEL_DRV_URL=https://www.intel.com/content/www/us/en/support/detect.html"
 
 rem ------------------------------------------------------------------
 rem  4. DESKTOP PATH, DATE, WINDOWS VERSION, LOG FILE
@@ -1319,8 +1326,9 @@ exit /b
 
 rem --- [9] Graphics driver clean install: DDU first, then NVCleanstall ---
 :game_gpu_clean
-call :info "Fixes graphics driver problems: DDU removes the old driver completely, then NVCleanstall installs a clean NVIDIA driver."
-call :info "Both are third-party tools (Wagnard and TechPowerUp). NVCleanstall works with NVIDIA cards only."
+call :info "Fixes graphics driver problems: DDU removes the old driver completely, then a clean driver is installed."
+call :info "NVIDIA: NVCleanstall installs the clean driver. AMD and Intel: the official driver page of the maker opens."
+call :info "DDU (Wagnard) and NVCleanstall (TechPowerUp) are third-party tools. They work with the cards named above."
 echo.
 echo   %cY%Before you start:%cX%
 echo     - Close all games and apps. The screen may flicker while DDU works.
@@ -1333,22 +1341,88 @@ if "%CONFIRMED%"=="0" (
     exit /b
 )
 if not exist "%TOOLS_DIR%" mkdir "%TOOLS_DIR%" >nul 2>&1
+call :gpu_pick_vendor
 call :confirm "STEP 1 of 2 - Run DDU now? Answer N to skip this step, for example if DDU was already done."
 if "%CONFIRMED%"=="1" (
     call :gpu_step_ddu
     if errorlevel 1 exit /b
 )
-call :confirm "STEP 2 of 2 - Run NVCleanstall now?"
+call :confirm "STEP 2 of 2 - Install a clean !GPU_VENDOR! driver now? Answer N to skip this step."
 if "%CONFIRMED%"=="1" (
-    call :gpu_step_nvci
+    call :gpu_step_driver
     if errorlevel 1 exit /b
 )
 echo.
 call :ok "All steps are finished. The graphics driver was cleaned and reinstalled. Restarting the PC is recommended."
 exit /b
 
+rem --- Asks which graphics card the user has (GPU_VENDOR = NVIDIA, AMD or Intel). Detects it first ---
+:gpu_pick_vendor
+set "GPU_VENDOR="
+set "DET_NV="
+set "DET_AMD="
+set "DET_INTEL="
+set "DET_TXT="
+set "DET_COUNT=0"
+set "DET_DEF="
+set "FT_PS=Get-CimInstance Win32_VideoController | ForEach-Object { $n=[string]$_.Name + ' ' + [string]$_.AdapterCompatibility; if($n -match 'NVIDIA'){'NVIDIA'} elseif($n -match 'AMD|Advanced Micro Devices|Radeon'){'AMD'} elseif($n -match 'Intel'){'Intel'} } | Select-Object -Unique"
+call :psx
+for /f "usebackq delims=" %%G in ("%FT_OUT%") do (
+    if /i "%%G"=="NVIDIA" set "DET_NV=1"
+    if /i "%%G"=="AMD" set "DET_AMD=1"
+    if /i "%%G"=="Intel" set "DET_INTEL=1"
+)
+if defined DET_NV (set "DET_TXT=!DET_TXT! NVIDIA" & set "DET_DEF=1" & set /a DET_COUNT+=1)
+if defined DET_AMD (set "DET_TXT=!DET_TXT! AMD" & set "DET_DEF=2" & set /a DET_COUNT+=1)
+if defined DET_INTEL (set "DET_TXT=!DET_TXT! Intel" & set "DET_DEF=3" & set /a DET_COUNT+=1)
+if not "!DET_COUNT!"=="1" set "DET_DEF="
+echo.
+echo   %cC%Which graphics card do you have?%cX%
+if defined DET_TXT call :info "Detected on this PC:!DET_TXT!"
+if not defined DET_TXT call :info "The graphics card could not be detected automatically. Please choose it yourself."
+echo.
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% NVIDIA
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% AMD
+echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Intel
+echo.
+:gpu_pick_ask
+set "GV="
+if defined DET_DEF (
+    set /p "GV=  Select an option [1-3] - press Enter for !DET_DEF!: "
+) else (
+    set /p "GV=  Select an option [1-3]: "
+)
+if not defined GV set "GV=!DET_DEF!"
+if "!GV!"=="1" set "GPU_VENDOR=NVIDIA"
+if "!GV!"=="2" set "GPU_VENDOR=AMD"
+if "!GV!"=="3" set "GPU_VENDOR=Intel"
+if not defined GPU_VENDOR (
+    call :info "Please enter 1, 2 or 3."
+    goto :gpu_pick_ask
+)
+call :log "Graphics driver repair - vendor chosen: !GPU_VENDOR!"
+exit /b 0
+
+rem --- Step 2: installs the clean driver. NVIDIA = NVCleanstall, AMD and Intel = official driver page ---
+:gpu_step_driver
+if /i "!GPU_VENDOR!"=="NVIDIA" goto :gpu_step_nvci
+set "GPU_URL=!AMD_DRV_URL!"
+if /i "!GPU_VENDOR!"=="Intel" set "GPU_URL=!INTEL_DRV_URL!"
+echo.
+call :info "Opening the official !GPU_VENDOR! driver page in your browser."
+call :info "Download and install the newest driver for your card from that page."
+call :info "On a laptop, the website of the laptop maker may offer a driver that fits your model better."
+call :log "Official !GPU_VENDOR! driver page opened: !GPU_URL!"
+start "" "!GPU_URL!"
+echo.
+echo   %cD%Press any key AFTER the driver is installed...%cX%
+pause >nul
+call :ok "The !GPU_VENDOR! driver step is finished."
+exit /b 0
+
 rem --- Step 1: DDU (waits until the user closes it) ---
 :gpu_step_ddu
+call :ddu_guide
 call :find_ddu
 if not defined DDU_EXE call :get_ddu
 if not defined DDU_EXE (
@@ -1356,9 +1430,70 @@ if not defined DDU_EXE (
     exit /b 1
 )
 echo.
-call :info "Opening DDU. Clean the driver, then CLOSE DDU to continue to step 2."
+call :info "Opening DDU. Choose !GPU_VENDOR! in the list, clean the driver, then CLOSE DDU to continue to step 2."
 start "" /wait "!DDU_EXE!"
 call :ok "DDU was closed."
+exit /b 0
+
+rem --- Optional tutorial image for DDU (Y/N, then language 1 = Arabic or 2 = English) ---
+:ddu_guide
+echo.
+echo   %cC%DDU tutorial image%cX%
+echo   %cD%A short picture that shows what to click inside DDU.%cX%
+echo.
+set "GD_ASK="
+set /p "GD_ASK=  Do you want to download the DDU tutorial image? [Y/N]: "
+if /i "!GD_ASK!"=="N" exit /b 0
+if /i not "!GD_ASK!"=="Y" (
+    call :info "Please enter Y or N."
+    goto :ddu_guide
+)
+:ddu_guide_lang
+echo.
+echo   Choose the language of the tutorial:
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Arabic
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% English
+echo.
+set "GD_LANG="
+set /p "GD_LANG=  Select an option [1-2]: "
+set "GD_URL="
+set "GD_NAME="
+if "!GD_LANG!"=="1" (
+    set "GD_URL=!DDU_GUIDE_AR_URL!"
+    set "GD_NAME=Arabic.png"
+)
+if "!GD_LANG!"=="2" (
+    set "GD_URL=!DDU_GUIDE_EN_URL!"
+    set "GD_NAME=English.png"
+)
+if not defined GD_NAME (
+    call :info "Please enter 1 or 2."
+    goto :ddu_guide_lang
+)
+set "GD_DIR=%TOOLS_DIR%\DDU_Guide"
+set "GD_FILE=!GD_DIR!\!GD_NAME!"
+if not exist "!GD_DIR!" mkdir "!GD_DIR!" >nul 2>&1
+call :check_size "!GD_FILE!" 50000
+if errorlevel 1 (
+    call :step 1 2 "Downloading the tutorial image..."
+    set "GD_LINK=!GD_URL!"
+    call :download GD_LINK "!GD_FILE!"
+    call :check_size "!GD_FILE!" 50000
+    if errorlevel 1 (
+        del /f /q "!GD_FILE!" >nul 2>&1
+        call :warn "The tutorial image could not be downloaded. Check your internet connection. Continuing without it."
+        exit /b 0
+    )
+) else (
+    call :info "The tutorial image is already on this PC."
+)
+call :step 2 2 "Opening the tutorial image..."
+call :log "DDU tutorial image opened: !GD_FILE!"
+start "" "!GD_FILE!"
+call :ok "Look at the image, then follow the steps in it."
+echo.
+echo   %cD%Press any key to open DDU...%cX%
+pause >nul
 exit /b 0
 
 rem --- Looks for the DDU program in the usual places ---
