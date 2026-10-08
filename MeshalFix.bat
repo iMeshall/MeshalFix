@@ -55,10 +55,16 @@ set "DDU_PAGE=https://www.wagnardsoft.com/display-driver-uninstaller-ddu"
 set "NVCI_URL=https://www.techpowerup.com/download/techpowerup-nvcleanstall/"
 set "NVCI_ALT_URL=https://sourceforge.net/projects/nvcleanstall/files/NVCleanstall_1.19.0.exe/download"
 rem  DDU tutorial images (Gaming Fixes, option 9) - raw links from the GitHub repository (Tutorial folder)
-set "DDU_GUIDE_BASE=https://raw.githubusercontent.com/iMeshall/MeshalFix/main/Tutorial"
+set "DDU_GUIDE_BASE=https://raw.githubusercontent.com/iMeshall/MeshalFix/main/Tutorial/DDU"
 set "DDU_GUIDE_AR_URL=%DDU_GUIDE_BASE%/Arabic.png"
 set "DDU_GUIDE_EN_URL=%DDU_GUIDE_BASE%/Englisgh.png"
 rem  Official driver pages for AMD and Intel cards (Gaming Fixes, option 9, step 2)
+rem  NVCleanstall tutorial images (Gaming Fixes, option 9, step 2). Image 1 has two languages, images 2 and 3 are shared
+set "NV_GUIDE_BASE=https://raw.githubusercontent.com/iMeshall/MeshalFix/main/Tutorial/Nvcleanstall"
+set "NV_GUIDE_AR_URL=%NV_GUIDE_BASE%/Arabic.png"
+set "NV_GUIDE_EN_URL=%NV_GUIDE_BASE%/English.png"
+set "NV_GUIDE_2_URL=%NV_GUIDE_BASE%/2.png"
+set "NV_GUIDE_3_URL=%NV_GUIDE_BASE%/3.png"
 set "AMD_DRV_URL=https://www.amd.com/en/support/download/drivers.html"
 set "INTEL_DRV_URL=https://www.intel.com/content/www/us/en/support/detect.html"
 
@@ -1422,16 +1428,19 @@ exit /b 0
 
 rem --- Step 1: DDU (waits until the user closes it) ---
 :gpu_step_ddu
-call :ddu_guide
 call :find_ddu
 if not defined DDU_EXE call :get_ddu
 if not defined DDU_EXE (
     call :err "DDU is not available, so step 1 was stopped."
     exit /b 1
 )
+set "GUIDE_ON="
+call :ddu_guide
 echo.
 call :info "Opening DDU. Choose !GPU_VENDOR! in the list, clean the driver, then CLOSE DDU to continue to step 2."
+if defined GUIDE_ON call :info "The tutorial picture stays open next to DDU, so you can follow it. It closes by itself when you close DDU."
 start "" /wait "!DDU_EXE!"
+if defined GUIDE_ON call :guide_stop
 call :ok "DDU was closed."
 exit /b 0
 
@@ -1473,12 +1482,12 @@ if not defined GD_NAME (
 set "GD_DIR=%TOOLS_DIR%\DDU_Guide"
 set "GD_FILE=!GD_DIR!\!GD_NAME!"
 if not exist "!GD_DIR!" mkdir "!GD_DIR!" >nul 2>&1
-call :check_size "!GD_FILE!" 50000
+call :check_size "!GD_FILE!" 10000
 if errorlevel 1 (
     call :step 1 2 "Downloading the tutorial image..."
     set "GD_LINK=!GD_URL!"
     call :download GD_LINK "!GD_FILE!"
-    call :check_size "!GD_FILE!" 50000
+    call :check_size "!GD_FILE!" 10000
     if errorlevel 1 (
         del /f /q "!GD_FILE!" >nul 2>&1
         call :warn "The tutorial image could not be downloaded. Check your internet connection. Continuing without it."
@@ -1487,13 +1496,10 @@ if errorlevel 1 (
 ) else (
     call :info "The tutorial image is already on this PC."
 )
-call :step 2 2 "Opening the tutorial image..."
+call :step 2 2 "Opening the tutorial picture..."
 call :log "DDU tutorial image opened: !GD_FILE!"
-start "" "!GD_FILE!"
-call :ok "Look at the image, then follow the steps in it."
-echo.
-echo   %cD%Press any key to open DDU...%cX%
-pause >nul
+call :show_images_bg "!GD_FILE!" "DDU tutorial"
+set "GUIDE_ON=1"
 exit /b 0
 
 rem --- Looks for the DDU program in the usual places ---
@@ -1546,10 +1552,100 @@ if not defined NVCI_EXE (
     call :err "NVCleanstall is not available, so step 2 was stopped."
     exit /b 1
 )
+set "GUIDE_ON="
+call :nvci_guide
 echo.
 call :info "Opening NVCleanstall. Pick and install your driver, then CLOSE NVCleanstall to finish."
+if defined GUIDE_ON call :info "The tutorial pictures stay open next to NVCleanstall. Close one picture to see the next. They close by themselves when you close NVCleanstall."
 start "" /wait "!NVCI_EXE!"
+if defined GUIDE_ON call :guide_stop
 call :ok "NVCleanstall was closed."
+exit /b 0
+
+rem --- Optional NVCleanstall tutorial: 3 images shown one after the other (Y/N, then language for image 1) ---
+:nvci_guide
+echo.
+echo   %cC%NVCleanstall tutorial images%cX%
+echo   %cD%3 short pictures that show what to click inside NVCleanstall.%cX%
+echo   %cD%Close each picture to see the next one.%cX%
+echo.
+set "NG_ASK="
+set /p "NG_ASK=  Do you want to download the NVCleanstall tutorial images? [Y/N]: "
+if /i "!NG_ASK!"=="N" exit /b 0
+if /i not "!NG_ASK!"=="Y" (
+    call :info "Please enter Y or N."
+    goto :nvci_guide
+)
+:nvci_guide_lang
+echo.
+echo   Choose the language of the first picture:
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Arabic
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% English
+echo.
+set "NG_LANG="
+set /p "NG_LANG=  Select an option [1-2]: "
+set "NG_URL1="
+set "NG_F1="
+if "!NG_LANG!"=="1" (
+    set "NG_URL1=NV_GUIDE_AR_URL"
+    set "NG_F1=NV_1_Arabic.png"
+)
+if "!NG_LANG!"=="2" (
+    set "NG_URL1=NV_GUIDE_EN_URL"
+    set "NG_F1=NV_1_English.png"
+)
+if not defined NG_F1 (
+    call :info "Please enter 1 or 2."
+    goto :nvci_guide_lang
+)
+set "NG_DIR=%TOOLS_DIR%\NVCleanstall_Guide"
+if not exist "!NG_DIR!" mkdir "!NG_DIR!" >nul 2>&1
+call :step 1 3 "Getting picture 1 of 3..."
+call :guide_fetch !NG_URL1! "!NG_DIR!\!NG_F1!"
+if errorlevel 1 goto :nvci_guide_fail
+call :step 2 3 "Getting picture 2 of 3..."
+call :guide_fetch NV_GUIDE_2_URL "!NG_DIR!\NV_2.png"
+if errorlevel 1 goto :nvci_guide_fail
+call :step 3 3 "Getting picture 3 of 3..."
+call :guide_fetch NV_GUIDE_3_URL "!NG_DIR!\NV_3.png"
+if errorlevel 1 goto :nvci_guide_fail
+call :log "NVCleanstall tutorial images ready: !NG_DIR!"
+call :show_images_bg "!NG_DIR!\!NG_F1!*!NG_DIR!\NV_2.png*!NG_DIR!\NV_3.png" "NVCleanstall tutorial"
+set "GUIDE_ON=1"
+exit /b 0
+:nvci_guide_fail
+call :warn "The tutorial images could not be downloaded. Check your internet connection. Continuing without them."
+exit /b 0
+
+rem --- Downloads one tutorial image. %~1 = NAME of the variable that holds the URL, %~2 = destination file. errorlevel 1 = failed ---
+:guide_fetch
+call :check_size "%~2" 10000
+if not errorlevel 1 exit /b 0
+call :download %~1 "%~2"
+call :check_size "%~2" 10000
+if errorlevel 1 (
+    del /f /q "%~2" >nul 2>&1
+    exit /b 1
+)
+exit /b 0
+
+rem --- Shows tutorial pictures in their own window at the LEFT side of the screen and does NOT wait: the program opens next to it.
+rem --- %~1 = one image file, or several separated by *  (closing one picture opens the next), %~2 = window title.
+rem --- The window closes by itself when :guide_stop is called (after the program is closed).
+:show_images_bg
+set "FT_IMGS=%~1"
+set "FT_IMG_TITLE=%~2"
+set "FT_STOPFLAG=%TEMP%\FixToolkit_guide_stop.flag"
+del /f /q "%FT_STOPFLAG%" >nul 2>&1
+set "FT_PS=try { Add-Type -AssemblyName System.Windows.Forms,System.Drawing; [System.Windows.Forms.Application]::EnableVisualStyles(); $files=@($env:FT_IMGS.Split('*')); $n=$files.Count; $i=0; foreach($file in $files){ $i++; if(Test-Path -LiteralPath $env:FT_STOPFLAG){ break }; $img=[System.Drawing.Image]::FromFile($file); $wa=[System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea; $r=[math]::Min(($wa.Width*0.45)/$img.Width,($wa.Height*0.92)/$img.Height); if($r -gt 1){$r=1}; $w=[int]($img.Width*$r); $h=[int]($img.Height*$r); $f=New-Object System.Windows.Forms.Form; $f.Text=($env:FT_IMG_TITLE + ' ' + $i + '/' + $n); $f.StartPosition='Manual'; $f.Location=New-Object System.Drawing.Point(($wa.Left+8),($wa.Top+8)); $f.ShowInTaskbar=$true; $f.ClientSize=New-Object System.Drawing.Size($w,$h); $p=New-Object System.Windows.Forms.PictureBox; $p.Dock='Fill'; $p.SizeMode='Zoom'; $p.Image=$img; $f.Controls.Add($p); $t=New-Object System.Windows.Forms.Timer; $t.Interval=700; $t.Add_Tick({ if(Test-Path -LiteralPath $env:FT_STOPFLAG){ $t.Stop(); $f.Close() } }); $t.Start(); $f.Add_Shown({ $f.Activate() }); [void]$f.ShowDialog(); $t.Dispose(); $img.Dispose() }; exit 0 } catch { exit 1 }"
+start "" powershell.exe -NoLogo -NoProfile -NonInteractive -STA -WindowStyle Hidden -ExecutionPolicy Bypass -Command "& ([scriptblock]::Create($env:FT_PS))"
+timeout /t 2 /nobreak >nul
+exit /b 0
+
+rem --- Closes the tutorial picture window (called after the program was closed) ---
+:guide_stop
+echo stop> "%FT_STOPFLAG%"
+timeout /t 1 /nobreak >nul
 exit /b 0
 
 rem --- Looks for NVCleanstall in Tools or in the Downloads folder ---
