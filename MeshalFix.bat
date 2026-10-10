@@ -54,12 +54,12 @@ set "DDU_URL=https://download.wagnardsoft.com/DDU/DDU%%20v18.1.6.1_setup.exe"
 set "DDU_PAGE=https://www.wagnardsoft.com/display-driver-uninstaller-ddu"
 set "NVCI_URL=https://www.techpowerup.com/download/techpowerup-nvcleanstall/"
 set "NVCI_ALT_URL=https://sourceforge.net/projects/nvcleanstall/files/NVCleanstall_1.19.0.exe/download"
-rem  DDU tutorial images (Gaming Fixes, option 9) - raw links from the GitHub repository (Tutorial folder)
+rem  DDU tutorial images (Gaming Fixes, option 8) - raw links from the GitHub repository (Tutorial folder)
 set "DDU_GUIDE_BASE=https://raw.githubusercontent.com/iMeshall/MeshalFix/main/Tutorial/DDU"
 set "DDU_GUIDE_AR_URL=%DDU_GUIDE_BASE%/Arabic.png"
 set "DDU_GUIDE_EN_URL=%DDU_GUIDE_BASE%/Englisgh.png"
-rem  Official driver pages for AMD and Intel cards (Gaming Fixes, option 9, step 2)
-rem  NVCleanstall tutorial images (Gaming Fixes, option 9, step 2). Image 1 has two languages, images 2 and 3 are shared
+rem  Official driver pages for AMD and Intel cards (Gaming Fixes, option 8, step 2)
+rem  NVCleanstall tutorial images (Gaming Fixes, option 8, step 2). Image 1 has two languages, images 2 and 3 are shared
 set "NV_GUIDE_BASE=https://raw.githubusercontent.com/iMeshall/MeshalFix/main/Tutorial/Nvcleanstall"
 set "NV_GUIDE_AR_URL=%NV_GUIDE_BASE%/Arabic.png"
 set "NV_GUIDE_EN_URL=%NV_GUIDE_BASE%/English.png"
@@ -108,16 +108,16 @@ goto :MAIN_MENU
 
 :MAIN_MENU
 call :banner
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Cleaning Tools
-echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% System Repair 
-echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Tron Script 
-echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Gaming Fixes
-echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Network Fixes
-echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Tools
-echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Restore Default Settings
-echo    %cC%[%cW%8%cC%]%cX% %cC%●%cX% System Information
-echo    %cC%[%cW%9%cC%]%cX% %cC%●%cX% System Reports
-echo    %cC%[%cW%C%cC%]%cX% %cC%●%cX% Create Restore Point
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Cleaning Tools           %cD%- Remove junk files and caches to free disk space%cX%
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% System Repair            %cD%- Fix Windows files, updates and common problems%cX%
+echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Tron Script              %cD%- Automated deep clean, virus scan and repair (long run)%cX%
+echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Gaming Fixes             %cD%- Repairs for crashes, stutter and launcher problems%cX%
+echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Network Fixes            %cD%- Fix internet, DNS and connection problems%cX%
+echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Tools                    %cD%- Open useful Windows and third-party tools%cX%
+echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Restore Default Settings %cD%- Put settings back to Windows defaults (preview first)%cX%
+echo    %cC%[%cW%8%cC%]%cX% %cC%●%cX% System Information       %cD%- Show your PC hardware and Windows details%cX%
+echo    %cC%[%cW%9%cC%]%cX% %cC%●%cX% System Reports           %cD%- Diagnostic, crash and error reports%cX%
+echo    %cC%[%cW%C%cC%]%cX% %cC%●%cX% Create Restore Point     %cD%- Save a Windows restore point before making changes%cX%
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Exit
 echo.
 echo   %cD%Logs are saved to: %LOGDIR%%cX%
@@ -153,12 +153,12 @@ rem  1) CLEANING TOOLS
 rem ==================================================================
 :CLEAN_MENU
 call :header "1) CLEANING TOOLS"
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Deep clean (temp, Prefetch, browsers, apps, and more)
-echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Empty Recycle Bin
-echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Clear thumbnail cache and icon cache
-echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Run Disk Cleanup (cleanmgr)
-echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Optimize drives (TRIM for SSD, defrag for HDD)
-echo    %cC%[%cW%A%cC%]%cX% %cC%●%cX% Run ALL cleaning (options 1 to 4)
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Deep clean               %cD%- Temp files, Prefetch, browser and app caches, RAM cache%cX%
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Empty Recycle Bin        %cD%- Permanently delete everything in the Recycle Bin%cX%
+echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Thumbnail and icon cache %cD%- Fixes wrong icons and missing picture previews%cX%
+echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Disk Cleanup (cleanmgr)  %cD%- Windows built-in cleaner for system leftovers%cX%
+echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Optimize drives          %cD%- TRIM for SSD, defrag for HDD - keeps drives fast%cX%
+echo    %cC%[%cW%A%cC%]%cX% %cC%●%cX% Run ALL cleaning         %cD%- Runs options 1 to 4 one after another%cX%
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
 echo.
 set "M="
@@ -373,18 +373,15 @@ exit /b
 
 rem --- Clears the cache-type folders inside ONE Chromium profile folder (%~1).
 rem --- Never touches Cookies, Login Data, Web Data, History, Local Storage or IndexedDB.
+rem --- Also never touches the GPU, Dawn and Shader caches or Service Worker ScriptCache: deleting them
+rem --- leaves the browser window drawn wrongly until it is restarted several times.
 :chromium_profile
 if not exist "%~1\" exit /b 1
 call :clear_folder "%~1\Cache"
 call :clear_folder "%~1\Code Cache"
-call :clear_folder "%~1\GPUCache"
-call :clear_folder "%~1\DawnCache"
-call :clear_folder "%~1\DawnGraphiteCache"
-call :clear_folder "%~1\DawnWebGPUCache"
 call :clear_folder "%~1\Media Cache"
 call :clear_folder "%~1\Application Cache"
 call :clear_folder "%~1\Service Worker\CacheStorage"
-call :clear_folder "%~1\Service Worker\ScriptCache"
 exit /b 0
 
 rem --- Clears the caches of every profile of one Chromium browser (%~1 = User Data folder, %~2 = name) ---
@@ -393,10 +390,6 @@ if not exist "%~1\" exit /b 1
 echo       %cD%- %~2%cX%
 call :chromium_profile "%~1"
 for /d %%P in ("%~1\Default" "%~1\Profile *") do call :chromium_profile "%%~P"
-call :clear_folder "%~1\ShaderCache"
-call :clear_folder "%~1\GrShaderCache"
-call :clear_folder "%~1\GraphiteDawnCache"
-call :clear_folder "%~1\extensions_crx_cache"
 call :clear_folder "%~1\Crashpad\reports"
 exit /b 0
 
@@ -406,10 +399,6 @@ if not exist "%~1\" exit /b 1
 echo       %cD%- %~2%cX%
 for /d %%P in ("%~1\*") do (
     call :clear_folder "%%~P\cache2"
-    call :clear_folder "%%~P\startupCache"
-    call :clear_folder "%%~P\shader-cache"
-    call :clear_folder "%%~P\thumbnails"
-    call :clear_folder "%%~P\jumpListCache"
     call :clear_folder "%%~P\OfflineCache"
 )
 exit /b 0
@@ -417,19 +406,24 @@ exit /b 0
 rem --- Part of deep clean: browser caches only (never passwords, cookies, history or logins) ---
 :clean_browsers
 call :info "Only cache folders are cleaned. You stay signed in - cookies, passwords, history and bookmarks are NOT touched."
-if defined DEEPCHK goto :browsers_go
 call :step 1 4 "Checking that browsers are closed..."
 call :check_running chrome.exe msedge.exe firefox.exe brave.exe opera.exe vivaldi.exe browser.exe chromium.exe librewolf.exe waterfox.exe
 if defined RUNNING_LIST (
     call :warn "Still running:!RUNNING_LIST!"
-    call :warn "Close them first for the best result. Locked files will be skipped."
-    call :confirm "Continue anyway?"
+    call :warn "A browser must be closed while its cache is cleaned. Otherwise its window can be drawn wrongly."
+    call :confirm "Close these browsers now? Save your work first."
     if "!CONFIRMED!"=="0" (
-        call :info "Cancelled."
+        call :info "Browser cleaning skipped."
+        exit /b
+    )
+    for %%B in (chrome.exe msedge.exe firefox.exe brave.exe opera.exe vivaldi.exe browser.exe chromium.exe librewolf.exe waterfox.exe) do taskkill /f /im %%B >nul 2>&1
+    timeout /t 3 /nobreak >nul
+    call :check_running chrome.exe msedge.exe firefox.exe brave.exe opera.exe vivaldi.exe browser.exe chromium.exe librewolf.exe waterfox.exe
+    if defined RUNNING_LIST (
+        call :warn "Could not close:!RUNNING_LIST! - browser cleaning skipped."
         exit /b
     )
 )
-:browsers_go
 call :step 2 4 "Clearing Chrome, Edge and Brave caches..."
 call :chromium_cache "%LocalAppData%\Google\Chrome\User Data" "Google Chrome"
 call :chromium_cache "%LocalAppData%\Microsoft\Edge\User Data" "Microsoft Edge"
@@ -706,9 +700,9 @@ call :offer_rp
 call :header "2) SYSTEM REPAIR"
 echo   %cD%All Windows repair tools in one place.%cX%
 echo.
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Core repair       (DISM / SFC / CHKDSK / WMI)
-echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Windows Update fixes
-echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Common Windows fixes (Search, Spooler, Store apps, Start menu, Firewall...)
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Core repair          %cD%- DISM, SFC, CHKDSK and WMI - fix damaged Windows files%cX%
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Windows Update fixes %cD%- Fix updates that fail, hang or will not install%cX%
+echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Common Windows fixes %cD%- Search, printer, Store apps, Start menu, Firewall...%cX%
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
 echo.
 set "M="
@@ -723,13 +717,13 @@ goto :REPAIR_HUB
 call :header "2) SYSTEM REPAIR - CORE"
 echo   %cD%These tools can take a long time. Do not close this window while they run.%cX%
 echo.
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% DISM CheckHealth   (quick check)
-echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% DISM ScanHealth    (deep scan)
-echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% DISM RestoreHealth (repair, needs internet)
-echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% SFC /scannow       (repair system files)
-echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% FULL repair sequence (1 to 4 in the correct order)
-echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% CHKDSK             (check a drive for errors)
-echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% WMI Repository Check (read-only report)
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% DISM CheckHealth     %cD%- Quick check - is the Windows image damaged?%cX%
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% DISM ScanHealth      %cD%- Deeper scan of the Windows image (takes longer)%cX%
+echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% DISM RestoreHealth   %cD%- Repairs the Windows image - needs internet%cX%
+echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% SFC /scannow         %cD%- Scans and repairs protected system files%cX%
+echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% FULL repair sequence %cD%- Runs options 1 to 4 in the correct order%cX%
+echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% CHKDSK               %cD%- Checks a drive for errors and bad sectors%cX%
+echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% WMI Repository Check %cD%- Read-only report - changes nothing%cX%
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to the repair menu
 echo.
 set "M="
@@ -950,8 +944,8 @@ rem --- Tron is installed: small menu ---
 call :header "3) TRON SCRIPT"
 echo   %cD%Installed in: !TRON_DIR!%cX%
 echo.
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Run Tron Script in a separate window
-echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Remove the Defender exclusion for the Tools folder (use after Tron finishes)
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Run Tron Script           %cD%- Deep clean, disinfect and repair in a separate window%cX%
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Remove Defender exclusion %cD%- Re-protect the Tools folder after Tron finishes%cX%
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
 echo.
 set "M="
@@ -1086,16 +1080,15 @@ call :offer_rp
 call :header "4) GAMING FIXES"
 echo   %cD%Repairs only - nothing here changes performance settings.%cX%
 echo.
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Crashes or stutter: clear GPU shader caches
-echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Launcher problems: clear launcher caches
-echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Reset Microsoft Store cache (wsreset)
-echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Repair Xbox app and Gaming Services
-echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Check DirectX and Visual C++ runtimes
-echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Game will not launch: restart game related services
-echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Fix game audio problems
-echo    %cC%[%cW%8%cC%]%cX% %cC%●%cX% Rebuild font cache (missing or garbled text)
-echo    %cC%[%cW%9%cC%]%cX% %cC%●%cX% Graphics driver clean install (DDU + NVCleanstall)
-echo    %cC%[%cW%10%cC%]%cX% %cC%●%cX% Game Doctor (evidence-based diagnosis and repair for one game)
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Shader cache fix              %cD%- Crashes or stutter: clear NVIDIA, AMD, Intel and DirectX caches%cX%
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Launcher cache fix            %cD%- Clear Steam, Epic, Battle.net, EA and Ubisoft caches%cX%
+echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Microsoft Store cache         %cD%- Run wsreset to fix Store and Game Pass problems%cX%
+echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Xbox app and Gaming Services  %cD%- Repair them and restart their services (game will not start)%cX%
+echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% DirectX and Visual C++        %cD%- Check the runtime files many games need%cX%
+echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Game audio fix                %cD%- Restart Windows Audio (no sound or crackling)%cX%
+echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Font cache rebuild            %cD%- Fixes missing or garbled text%cX%
+echo    %cC%[%cW%8%cC%]%cX% %cC%●%cX% Graphics driver clean install %cD%- DDU + NVCleanstall: remove the old driver, install a clean one%cX%
+echo    %cC%[%cW%9%cC%]%cX% %cC%●%cX% Game Doctor                   %cD%- Enter a game folder, it finds problems and offers fixes%cX%
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
 echo.
 set "M="
@@ -1106,11 +1099,10 @@ if "%M%"=="2" set "ACT=game_launcher"
 if "%M%"=="3" set "ACT=game_wsreset"
 if "%M%"=="4" set "ACT=game_xbox"
 if "%M%"=="5" set "ACT=game_runtimes"
-if "%M%"=="6" set "ACT=game_services"
-if "%M%"=="7" set "ACT=fix_audio_tool"
-if "%M%"=="8" set "ACT=fix_fontcache"
-if "%M%"=="9" set "ACT=game_gpu_clean"
-if "%M%"=="10" set "ACT=game_doctor"
+if "%M%"=="6" set "ACT=fix_audio_tool"
+if "%M%"=="7" set "ACT=fix_fontcache"
+if "%M%"=="8" set "ACT=game_gpu_clean"
+if "%M%"=="9" set "ACT=game_doctor"
 if "%M%"=="0" goto :MAIN_MENU
 call :run_tool %ACT%
 goto :GAME_MENU
@@ -1186,9 +1178,10 @@ start "" /wait wsreset.exe
 call :ok "Microsoft Store cache reset."
 exit /b
 
-rem --- Xbox app and Gaming Services (re-register packages) ---
+rem --- [4] Xbox app, Gaming Services and their services (merged: repair + restart) ---
 :game_xbox
-call :info "Re-registers the Xbox app, Gaming Services and Xbox overlays with Windows."
+call :info "Fixes games that will not start because of the Xbox app, Gaming Services or Xbox sign-in."
+call :info "Step 1 re-registers the Xbox packages with Windows. Step 2 restarts the Xbox services that are running."
 call :info "It does not delete anything. It can take a few minutes."
 call :confirm "Repair the Xbox app and Gaming Services now?"
 if "%CONFIRMED%"=="0" (
@@ -1197,8 +1190,19 @@ if "%CONFIRMED%"=="0" (
 )
 set "PKG_VERBOSE=1"
 set "PKGS='Microsoft.GamingServices','Microsoft.GamingApp','Microsoft.XboxIdentityProvider','Microsoft.XboxGamingOverlay','Microsoft.XboxGameOverlay','Microsoft.Xbox.TCUI','Microsoft.XboxSpeechToTextOverlay'"
-call :step 1 1 "Re-registering Xbox and Gaming Services packages..."
+call :step 1 2 "Re-registering Xbox and Gaming Services packages..."
 call :reregister_pkgs
+call :step 2 2 "Restarting the Xbox and Gaming services (safe - they restart by themselves)..."
+for %%S in (XblAuthManager XblGameSave XboxGipSvc XboxNetApiSvc GamingServices GamingServicesNet) do call :restart_service %%S
+echo.
+echo   %cC%If the game still will not start:%cX%
+echo     1. Restart the PC once and try again.
+echo     2. Update your graphics driver from the NVIDIA, AMD or Intel website.
+echo     3. Verify the game files inside its launcher (Steam, Epic, Battle.net).
+echo     4. Install missing runtimes - use option 5 of this menu.
+echo     5. Clear shader and launcher caches - options 1 and 2 of this menu.
+echo     6. Run Windows Update and the System Repair menu if crashes continue.
+echo.
 call :ok "Done. If problems continue, restart the PC and sign in to the Xbox app again."
 exit /b
 
@@ -1241,25 +1245,6 @@ if "%VC%"=="0" (
     call :confirm "Open the official Microsoft Visual C++ Redistributable page in your browser?"
     if "!CONFIRMED!"=="1" start "" "https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist"
 )
-exit /b
-
-rem --- Game will not launch: checklist + restart Xbox related services ---
-:game_services
-echo   %cC%Quick checklist for a game that will not start:%cX%
-echo     1. Restart the PC once and try again.
-echo     2. Update your graphics driver from the NVIDIA, AMD or Intel website.
-echo     3. Verify the game files inside its launcher (Steam, Epic, Battle.net).
-echo     4. Install missing runtimes - use option 5 of this menu.
-echo     5. Clear shader and launcher caches - options 1 and 2 of this menu.
-echo     6. Run Windows Update and the System Repair menu if crashes continue.
-echo.
-call :ask "Now restart the running Xbox and Gaming services (safe - they restart by themselves)?"
-if "%CONFIRMED%"=="0" (
-    call :info "Cancelled."
-    exit /b
-)
-for %%S in (XblAuthManager XblGameSave XboxGipSvc XboxNetApiSvc GamingServices GamingServicesNet) do call :restart_service %%S
-call :ok "Service check finished."
 exit /b
 
 rem --- Restarts one service only if it is currently running ---
@@ -1698,7 +1683,7 @@ exit /b 0
 
 rem --- [10] Game Doctor: evidence-based diagnosis of ONE game (runs in its own window) ---
 :game_doctor
-call :info "Game Doctor checks ONE game with real evidence: files, config, dependencies, a real launch test and crash proof."
+call :info "Enter the game folder - Game Doctor checks everything by itself: files, config, dependencies, a real launch test and crash proof."
 call :info "If nothing is wrong it says GAME HEALTHY and changes nothing. Every repair asks first and makes a backup."
 set "FT_SELF=%SCRIPT%"
 set "FT_GDPS=%TEMP%\FixToolkit_gamedoctor.ps1"
@@ -1723,15 +1708,15 @@ rem  5) NETWORK FIXES
 rem ==================================================================
 :NET_MENU
 call :header "5) NETWORK FIXES"
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Flush DNS cache
-echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Release and renew IP address
-echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Reset Winsock and TCP/IP stack (restart needed)
-echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Reset network adapters
-echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Ping test (8.8.8.8 and 1.1.1.1)
-echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Show current IP, DNS and gateway
-echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Set DNS: Google or Cloudflare
-echo    %cC%[%cW%8%cC%]%cX% %cC%●%cX% Set DNS back to automatic
-echo    %cC%[%cW%9%cC%]%cX% %cC%●%cX% FIX MY INTERNET - runs the safe steps in order
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Flush DNS cache              %cD%- Clear saved DNS records (fixes wrong or old websites)%cX%
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Release and renew IP address %cD%- Ask your router for a fresh IP address%cX%
+echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Reset Winsock and TCP/IP     %cD%- Repairs deep network settings - restart needed%cX%
+echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Reset network adapters       %cD%- Restart your network cards%cX%
+echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Ping test                    %cD%- Test the connection to 8.8.8.8 and 1.1.1.1%cX%
+echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Show IP, DNS and gateway     %cD%- View your current network details%cX%
+echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Set DNS                      %cD%- Switch to Google or Cloudflare DNS%cX%
+echo    %cC%[%cW%8%cC%]%cX% %cC%●%cX% Set DNS back to automatic    %cD%- Use the DNS from your router again%cX%
+echo    %cC%[%cW%9%cC%]%cX% %cC%●%cX% FIX MY INTERNET              %cD%- Runs the safe repair steps in the correct order%cX%
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
 echo.
 set "M="
@@ -1916,8 +1901,8 @@ rem  2) SYSTEM REPAIR - WINDOWS UPDATE FIXES
 rem ==================================================================
 :WU_MENU
 call :header "2) SYSTEM REPAIR - WINDOWS UPDATE"
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Repair Windows Update components (full reset)
-echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Delete the old backup folders made by option 1
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Repair Windows Update     %cD%- Full reset of the update system (fixes stuck updates)%cX%
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Delete old backup folders %cD%- Frees the space used by the backups from option 1%cX%
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to the repair menu
 echo.
 set "M="
@@ -1972,16 +1957,16 @@ rem  2) SYSTEM REPAIR - COMMON WINDOWS FIXES
 rem ==================================================================
 :COMMON_MENU
 call :header "2) SYSTEM REPAIR - COMMON FIXES"
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Rebuild icon cache and thumbnail cache
-echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Fix Windows Search (reset and rebuild the index)
-echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Fix Print Spooler (clear the print queue)
-echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Re-register ALL Microsoft Store apps (slow)
-echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Restart Bluetooth and Windows Audio services
-echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Re-register Start Menu and taskbar
-echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Restart Explorer
-echo    %cC%[%cW%8%cC%]%cX% %cC%●%cX% Update Windows Defender definitions
-echo    %cC%[%cW%9%cC%]%cX% %cC%●%cX% Reset Windows Firewall to default
-echo    %cC%[%cW%10%cC%]%cX% %cC%●%cX% Repair app folder permissions
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Icon and thumbnail cache      %cD%- Fixes wrong icons and missing previews%cX%
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Fix Windows Search            %cD%- Reset the index when search is slow or empty%cX%
+echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Fix Print Spooler             %cD%- Clear a stuck print queue%cX%
+echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Re-register ALL Store apps    %cD%- Fixes apps that will not open (slow)%cX%
+echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Restart Bluetooth and Audio   %cD%- Fixes lost sound or Bluetooth devices%cX%
+echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Re-register Start Menu        %cD%- Fixes a broken Start menu or taskbar%cX%
+echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Restart Explorer              %cD%- Reload the desktop, taskbar and File Explorer%cX%
+echo    %cC%[%cW%8%cC%]%cX% %cC%●%cX% Update Defender definitions   %cD%- Download the newest virus definitions%cX%
+echo    %cC%[%cW%9%cC%]%cX% %cC%●%cX% Reset Windows Firewall        %cD%- Back to default rules (your rules are backed up)%cX%
+echo    %cC%[%cW%10%cC%]%cX% %cC%●%cX% Repair app folder permissions %cD%- Fix access denied errors on one app folder%cX%
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to the repair menu
 echo.
 set "M="
@@ -2203,9 +2188,11 @@ echo   %cD%A tool is downloaded from its official source the first time you open
 echo.
 for /l %%n in (1,1,!CAT_N!) do (
     set "id=0%%n"
-    echo    %cC%[%cW%!id:~-2!%cC%]%cX% %cC%●%cX% !CAT_%%n_TITLE!
+    set "PAD=!CAT_%%n_TITLE!                    "
+    set "dn=%%n"
+    echo    %cC%[%cW%!dn!%cC%]%cX% %cC%●%cX% !PAD:~0,19! %cD%- !CAT_%%n_DESC!%cX%
 )
-echo    %cC%[%cW%00%cC%]%cX% %cC%●%cX% Back to main menu
+echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
 echo.
 set "M="
 set /p "M=  Select an option: "
@@ -2228,9 +2215,10 @@ rem --- One category: lists its tools and opens the one you pick ---
 call :header "6) TOOLS - !CUR_TITLE!"
 for /l %%n in (1,1,!TL_%CUR_CAT%_N!) do (
     set "id=0%%n"
-    echo    %cC%[%cW%!id:~-2!%cC%]%cX% %cC%●%cX% !TL_%CUR_CAT%_%%n_NAME!
+    set "dn=%%n"
+    echo    %cC%[%cW%!dn!%cC%]%cX% %cC%●%cX% !TL_%CUR_CAT%_%%n_NAME!
 )
-echo    %cC%[%cW%00%cC%]%cX% %cC%●%cX% Back to the tools menu
+echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to the tools menu
 echo.
 set "M="
 set /p "M=  Select an option: "
@@ -2256,11 +2244,11 @@ exit /b
 rem --- The tool catalog. A tool may appear in more than one category. ---
 :tools_register
 set "CAT_N=0"
-call :cat_add BENCH "Benchmark Tools"
-call :cat_add STORAGE "Storage Tools"
-call :cat_add UNINST "Uninstaller Tools"
-call :cat_add PERF "Performance Tools"
-call :cat_add WINTOOLS "Windows Tools"
+call :cat_add BENCH "Benchmark Tools" "Test the speed and stability of your PC"
+call :cat_add STORAGE "Storage Tools" "Drive health, disk speed and what uses space"
+call :cat_add UNINST "Uninstaller Tools" "Remove programs completely with their leftovers"
+call :cat_add PERF "Performance Tools" "Monitor, tune and get info about CPU and GPU"
+call :cat_add WINTOOLS "Windows Tools" "Quick shortcuts to built-in Windows consoles"
 
 rem ---- 1) Benchmark Tools ----
 call :tool_add BENCH "PassMark PerformanceTest (full PC benchmark)" "PassMarkPT" "PerformanceTest64.exe" "https://www.passmark.com/products/performancetest/download.php" "WGR=PassMark.PerformanceTest" "FIND=%ProgramFiles%\PerformanceTest\PerformanceTest64.exe" "FIND=%ProgramFiles%\PassMark\PerformanceTest\PerformanceTest64.exe"
@@ -2282,9 +2270,9 @@ call :tool_add STORAGE "SSD Health (wear, temperature, errors - built in)" "-" "
 call :tool_add STORAGE "Disk Management (Windows)" "-" "-" "-" "BI=diskmgmt.msc"
 
 rem ---- 3) Uninstaller Tools ----
-call :tool_add UNINST "Geek Uninstaller" "GeekUninstaller" "geek.exe" "https://geekuninstaller.com/download" "URL=https://geekuninstaller.com/geek.zip"
-call :tool_add UNINST "Revo Uninstaller (portable)" "RevoUninstaller" "RevoUPort.exe Revo*.exe" "https://www.revouninstaller.com/revo-uninstaller-free-download/" "URL=https://download.revouninstaller.com/download/RevoUninstaller_Portable.zip"
-call :tool_add UNINST "Bulk Crap Uninstaller" "BCUninstaller" "BCUninstaller.exe" "https://www.bcuninstaller.com/" "GH=Klocman/Bulk-Crap-Uninstaller|BCUninstaller_.*_portable\.zip$"
+call :tool_add UNINST "Geek Uninstaller (light uninstaller, removes leftovers)" "GeekUninstaller" "geek.exe" "https://geekuninstaller.com/download" "URL=https://geekuninstaller.com/geek.zip"
+call :tool_add UNINST "Revo Uninstaller (portable, removes leftovers)" "RevoUninstaller" "RevoUPort.exe Revo*.exe" "https://www.revouninstaller.com/revo-uninstaller-free-download/" "URL=https://download.revouninstaller.com/download/RevoUninstaller_Portable.zip"
+call :tool_add UNINST "Bulk Crap Uninstaller (remove many programs at once)" "BCUninstaller" "BCUninstaller.exe" "https://www.bcuninstaller.com/" "GH=Klocman/Bulk-Crap-Uninstaller|BCUninstaller_.*_portable\.zip$"
 call :tool_add UNINST "TreeSize Free (find big folders to remove)" "TreeSize" "TreeSizeFree.exe" "https://www.jam-software.com/treesize_free" "WGI=JAMSoftware.TreeSize.Free" "FIND=%ProgramFiles%\JAM Software\TreeSize Free\TreeSizeFree.exe"
 call :tool_add UNINST "Windows Apps (Settings - Installed apps)" "-" "-" "-" "BI=ms-settings:appsfeatures"
 
@@ -2297,15 +2285,15 @@ call :tool_add PERF "GPU-Z (graphics card information)" "GPU-Z" "*GPU-Z*.exe" "h
 call :tool_add PERF "CPU-Z (processor and memory information)" "CPU-Z" "cpuz_x64.exe cpuz*.exe" "https://www.cpuid.com/softwares/cpu-z.html" "WGI=CPUID.CPU-Z"
 
 rem ---- 5) Windows Tools (all built in) ----
-call :tool_add WINTOOLS "Device Manager" "-" "-" "-" "BI=devmgmt.msc"
-call :tool_add WINTOOLS "Disk Management" "-" "-" "-" "BI=diskmgmt.msc"
-call :tool_add WINTOOLS "Services" "-" "-" "-" "BI=services.msc"
-call :tool_add WINTOOLS "Task Scheduler" "-" "-" "-" "BI=taskschd.msc"
-call :tool_add WINTOOLS "Event Viewer" "-" "-" "-" "BI=eventvwr.msc"
-call :tool_add WINTOOLS "Computer Management" "-" "-" "-" "BI=compmgmt.msc"
-call :tool_add WINTOOLS "Resource Monitor" "-" "-" "-" "BI=resmon.exe"
-call :tool_add WINTOOLS "System Information" "-" "-" "-" "BI=msinfo32.exe"
-call :tool_add WINTOOLS "Registry Editor" "-" "-" "-" "BI=regedit.exe"
+call :tool_add WINTOOLS "Device Manager (drivers and hardware)" "-" "-" "-" "BI=devmgmt.msc"
+call :tool_add WINTOOLS "Disk Management (drives and partitions)" "-" "-" "-" "BI=diskmgmt.msc"
+call :tool_add WINTOOLS "Services (start and stop Windows services)" "-" "-" "-" "BI=services.msc"
+call :tool_add WINTOOLS "Task Scheduler (scheduled tasks)" "-" "-" "-" "BI=taskschd.msc"
+call :tool_add WINTOOLS "Event Viewer (system logs and errors)" "-" "-" "-" "BI=eventvwr.msc"
+call :tool_add WINTOOLS "Computer Management (admin tools in one place)" "-" "-" "-" "BI=compmgmt.msc"
+call :tool_add WINTOOLS "Resource Monitor (live CPU, RAM, disk, network)" "-" "-" "-" "BI=resmon.exe"
+call :tool_add WINTOOLS "System Information (hardware and system details)" "-" "-" "-" "BI=msinfo32.exe"
+call :tool_add WINTOOLS "Registry Editor (advanced - be careful)" "-" "-" "-" "BI=regedit.exe"
 call :tool_add WINTOOLS "Group Policy Editor (not on Windows Home)" "-" "-" "-" "BI=gpedit.msc"
 call :tool_add WINTOOLS "Windows Features (turn features on or off)" "-" "-" "-" "BI=optionalfeatures.exe"
 set "TOOLS_READY=1"
@@ -2316,6 +2304,7 @@ rem --- Registers a category: KEY and Title ---
 set /a CAT_N+=1
 set "CAT_!CAT_N!_KEY=%~1"
 set "CAT_!CAT_N!_TITLE=%~2"
+set "CAT_!CAT_N!_DESC=%~3"
 exit /b
 
 rem --- Registers a tool (see the how-to at the top of this section) ---
@@ -2603,20 +2592,19 @@ rem ==================================================================
 call :header "7) RESTORE DEFAULT SETTINGS"
 echo   %cD%Only real, known restores. Every change is shown first and needs Y/N.%cX%
 echo.
-echo    %cC%[%cW%01%cC%]%cX% %cC%●%cX% Restore GPU Settings
-echo    %cC%[%cW%02%cC%]%cX% %cC%●%cX% Restore Windows Services
-echo    %cC%[%cW%03%cC%]%cX% %cC%●%cX% Restore Network Settings
-echo    %cC%[%cW%04%cC%]%cX% %cC%●%cX% Restore Firewall Settings
-echo    %cC%[%cW%05%cC%]%cX% %cC%●%cX% Restore Windows Update
-echo    %cC%[%cW%06%cC%]%cX% %cC%●%cX% Restore Power Settings
-echo    %cC%[%cW%07%cC%]%cX% %cC%●%cX% Restore Windows Security
-echo    %cC%[%cW%08%cC%]%cX% %cC%●%cX% Restore Windows Explorer
-echo    %cC%[%cW%09%cC%]%cX% %cC%●%cX% Restore File Associations
-echo    %cC%[%cW%10%cC%]%cX% %cC%●%cX% Restore Startup Configuration
-echo    %cC%[%cW%11%cC%]%cX% %cC%●%cX% Back
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Restore GPU Settings          %cD%- Graphics settings back to defaults%cX%
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Restore Windows Services      %cD%- Services back to their default startup type%cX%
+echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Restore Network Settings      %cD%- Network configuration back to defaults%cX%
+echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Restore Firewall Settings     %cD%- Windows Firewall back to default rules%cX%
+echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Restore Windows Update        %cD%- Update settings back to defaults%cX%
+echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Restore Power Settings        %cD%- Power plans back to defaults%cX%
+echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Restore Windows Security      %cD%- Security settings back to defaults%cX%
+echo    %cC%[%cW%8%cC%]%cX% %cC%●%cX% Restore Windows Explorer      %cD%- Explorer settings back to defaults%cX%
+echo    %cC%[%cW%9%cC%]%cX% %cC%●%cX% Restore Startup Configuration %cD%- Startup settings back to defaults%cX%
+echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
 echo.
 set "M="
-set /p "M=  Select an option [1-11]: "
+set /p "M=  Select an option [0-9]: "
 if defined M if "!M:~0,1!"=="0" if not "!M!"=="0" set "M=!M:~1!"
 set "RS="
 set "RT="
@@ -2628,28 +2616,27 @@ if "!M!"=="5" (set "RS=WINUPDATE" & set "RT=Restore Windows Update")
 if "!M!"=="6" (set "RS=POWER" & set "RT=Restore Power Settings")
 if "!M!"=="7" (set "RS=SECURITY" & set "RT=Restore Windows Security")
 if "!M!"=="8" (set "RS=EXPLORER" & set "RT=Restore Windows Explorer")
-if "!M!"=="9" (set "RS=FILEASSOC" & set "RT=Restore File Associations")
-if "!M!"=="10" (set "RS=STARTUP" & set "RT=Restore Startup Configuration")
-if "!M!"=="11" goto :MAIN_MENU
+if "!M!"=="9" (set "RS=STARTUP" & set "RT=Restore Startup Configuration")
+if "!M!"=="0" goto :MAIN_MENU
 if defined RS call :rst_run "!RS!" "!RT!"
 goto :RESTORE_MENU
 
 rem --- GPU vendor menu ---
 :RST_GPU
 call :header "7) RESTORE DEFAULT SETTINGS - GPU"
-echo    %cC%[%cW%01%cC%]%cX% %cC%●%cX% NVIDIA
-echo    %cC%[%cW%02%cC%]%cX% %cC%●%cX% AMD
-echo    %cC%[%cW%03%cC%]%cX% %cC%●%cX% Intel
-echo    %cC%[%cW%04%cC%]%cX% %cC%●%cX% Back
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% NVIDIA
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% AMD
+echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Intel
+echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to the restore menu
 echo.
 set "M="
-set /p "M=  Select an option [1-4]: "
+set /p "M=  Select an option [0-3]: "
 if defined M if "!M:~0,1!"=="0" if not "!M!"=="0" set "M=!M:~1!"
 set "RS="
 if "!M!"=="1" set "RS=GPU_NVIDIA"
 if "!M!"=="2" set "RS=GPU_AMD"
 if "!M!"=="3" set "RS=GPU_INTEL"
-if "!M!"=="4" goto :RESTORE_MENU
+if "!M!"=="0" goto :RESTORE_MENU
 if defined RS call :rst_run "!RS!" "Restore GPU Settings"
 goto :RST_GPU
 
@@ -2796,67 +2783,54 @@ rem ==================================================================
 rem  8) SYSTEM INFORMATION
 rem ==================================================================
 :SYSINFO
-call :header "8) SYSTEM INFORMATION"
-set "REPORT=%DESKTOP%\SystemInfo_%TODAY%.txt"
-call :info "Collecting information - this takes 10 to 20 seconds..."
-call :sysinfo_body > "%REPORT%" 2>&1
-type "%REPORT%"
-echo.
-call :ok "Report saved to: %REPORT%"
+call :header_compact "8) SYSTEM INFORMATION"
+set "FT_QFILE=%TEMP%\FixToolkit_bios_query.txt"
+del /f /q "%FT_QFILE%" >nul 2>&1
+call :sysinfo_body
+set "BQ="
+if exist "%FT_QFILE%" set /p "BQ=" < "%FT_QFILE%"
+if defined BQ (
+    echo   %cC%[%cW%S%cC%]%cX% Search online for a BIOS update     %cC%[%cW%0%cC%]%cX% Back
+    choice /c S0 /n >nul
+    if errorlevel 2 goto :MAIN_MENU
+    start "" "https://www.google.com/search?q=!BQ!"
+    goto :MAIN_MENU
+)
 call :pause
 goto :MAIN_MENU
 
 :sysinfo_body
-echo ==============================================================
-echo  SYSTEM INFORMATION REPORT - %TODAY% %time:~0,8%
-echo ==============================================================
 echo.
-echo [Windows]
-set "FT_PS=$o=Get-CimInstance Win32_OperatingSystem; ('OS      : ' + $o.Caption + ' (build ' + $o.BuildNumber + ', ' + $o.OSArchitecture + ')'); $u=(Get-Date)-$o.LastBootUpTime; ('Uptime  : {0} days {1} h {2} min' -f $u.Days,$u.Hours,$u.Minutes)"
+rem --- The PowerShell script is split into FT_PART1..FT_PART10 (cmd cannot hold more than 8191 characters in one expanded line). A short stub joins them in PowerShell. ---
+set "FT_PART1=$ErrorActionPreference='SilentlyContinue'; [Threading.Thread]::CurrentThread.CurrentCulture=[Globalization.CultureInfo]::InvariantCulture; $rows=New-Object System.Collections.ArrayList; function Add-Row($k,$val){ [void]$rows.Add(@($k,$val)) }; function Bad($s){ (-not $s) -or (([string]$s).Trim() -match 'O\.E\.M|Default string|System Product Name|System manufacturer|System Version|Not Applicable|Not Specified') -or (@('N/A','None','Unknown','0') -contains ([string]$s).Trim()) }; function Clean($s){ if(-not $s){ return 'N/A' }; ($s -replace '\(R\)|\(TM\)','' -replace '\s+',' ').Trim() }; function Brand($s){ if(Bad $s){ return '' }; ($s -replace '\b(technology|co|ltd|inc|corporation|corp|computer|international)\b','' -replace '[,\.]','' -replace 'ASUSTeK','ASUS' -replace 'Micro-Star','MSI' -replace '\s+',' ').Trim() }; function Sz($n){ if($n -ge 1e12){ '{0:0.##} TB' -f ($n/1e12) } else { '{0:0} GB' -f ($n/1e9) } };"
+set "FT_PART2=$os=Get-CimInstance Win32_OperatingSystem; $cv=Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'; $wn=(Clean $os.Caption) -replace '^Microsoft\s+',''; $wv=$cv.DisplayVersion; if(-not $wv){ $wv=$cv.ReleaseId }; $wb=[string]$cv.CurrentBuild; if($cv.UBR -ne $null){ $wb=$wb+'.'+$cv.UBR }; $lic=Get-CimInstance SoftwareLicensingProduct -Filter 'PartialProductKey IS NOT NULL' | Where-Object { $_.ApplicationId -eq '55c92734-d682-4d71-983e-d6ec3f16059f' } | Select-Object -First 1; $act='Activation unknown'; if($lic){ if($lic.LicenseStatus -eq 1){ $act='Activated' } else { $act='NOT activated' } }; Add-Row 'Windows' ('{0}  -  {1} (build {2})  -  {3}' -f $wn,$wv,$wb,$act); $cpus=@(Get-CimInstance Win32_Processor); $p=$cpus[0]; $cn=(Clean $p.Name) -replace '\s*@\s*[\d\.]+\s*GHz','' -replace '\s+CPU\b','' -replace '\s+\d+-Core Processor','' -replace '\s+Processor$',''; $cores=($cpus|Measure-Object NumberOfCores -Sum).Sum; $thr=($cpus|Measure-Object NumberOfLogicalProcessors -Sum).Sum; Add-Row 'CPU' ('{0}  ({1} cores / {2} threads)' -f $cn.Trim(),$cores,$thr);"
+set "FT_PART3=$bb=Get-CimInstance Win32_BaseBoard; $cs=Get-CimInstance Win32_ComputerSystem; $csp=Get-CimInstance Win32_ComputerSystemProduct; $lap=($cs.PCSystemType -eq 2); $pre=($cs.Manufacturer -match 'Dell|Hewlett|\bHP\b|Lenovo|Acer|Fujitsu|Alienware|Razer|Microsoft|Samsung|Toshiba'); $mdl=$cs.Model; if(($cs.Manufacturer -match 'LENOVO') -and -not (Bad $csp.Version)){ $mdl=$csp.Version }; $mbl='Motherboard'; if(($lap -or $pre) -and -not (Bad $mdl)){ $mbv=(Brand $cs.Manufacturer)+' '+(Clean $mdl); if($lap){ $mbl='Laptop' } } elseif(-not (Bad $bb.Product)){ $mbv=(Brand $bb.Manufacturer)+' '+(Clean $bb.Product) } elseif(-not (Bad $mdl)){ $mbv=(Brand $cs.Manufacturer)+' '+(Clean $mdl) } else { $mbv='Unknown (not reported by BIOS)' }; $mbv=$mbv.Trim(); Add-Row $mbl $mbv; $bi=Get-CimInstance Win32_BIOS; $bd=''; if($bi.ReleaseDate){ $bd='  ('+([datetime]$bi.ReleaseDate).ToString('yyyy-MM-dd',[Globalization.CultureInfo]::InvariantCulture)+')' }; Add-Row 'BIOS' ((Clean $bi.SMBIOSBIOSVersion)+$bd);"
+set "FT_PART4=$mem=@(Get-CimInstance Win32_PhysicalMemory); if($mem.Count -gt 0){ $tot=($mem|Measure-Object Capacity -Sum).Sum; $ty=@{20='DDR';21='DDR2';24='DDR3';26='DDR4';30='LPDDR4';34='DDR5';35='LPDDR5'}[[int]$mem[0].SMBIOSMemoryType]; if(-not $ty){ $ty='' }; $sp=$mem[0].ConfiguredClockSpeed; if(-not $sp){ $sp=$mem[0].Speed }; $per=@($mem|ForEach-Object{ [math]::Round($_.Capacity/1GB) }|Select-Object -Unique); if($per.Count -eq 1){ $cfg=('{0}x{1} GB' -f $mem.Count,$per[0]) } else { $cfg=('{0} sticks' -f $mem.Count) }; $mk=([string]$mem[0].Manufacturer).Trim(); $pn=([string]$mem[0].PartNumber).Trim(); if((-not $mk) -or (@('Unknown','Undefined') -contains $mk) -or ($mk -like 'Default*') -or ($mk -match '\A[0-9A-Fa-f]{4}\z') -or ($mk -match '\A0+\z')){ $nm=$pn } else { $nm=($mk+' '+$pn).Trim() }; Add-Row 'RAM' (('{0} GB ({1})  {2} @ {3} MHz' -f [math]::Round($tot/1GB),$cfg,$ty,$sp)+'  -  '+$nm) };"
+set "FT_PART5=$vr=@{}; Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}' | ForEach-Object { $rp=Get-ItemProperty $_.PSPath; $q=$rp.'HardwareInformation.qwMemorySize'; if($q -and $rp.DriverDesc){ if($q -is [byte[]]){ $q=[BitConverter]::ToUInt64($q,0) }; $vr[[string]$rp.DriverDesc]=[uint64]$q } }; $gpus=@(Get-CimInstance Win32_VideoController | Where-Object { $_.Name -notmatch 'Basic|Virtual|Remote|Parsec|Meta|Mirage|DisplayLink|Citrix|VNC' }); $gi=0; foreach($g in $gpus){ $gi++; $vm=$vr[[string]$g.Name]; if(-not $vm){ $vm=$g.AdapterRAM }; $vs=''; if($vm -ge 1GB){ $vs='  (' + [math]::Round($vm/1GB) + ' GB)' }; $gl='GPU'; if($gpus.Count -gt 1){ $gl='GPU '+$gi }; Add-Row $gl ((Clean $g.Name)+$vs) }; foreach($g in $gpus){ $dv=[string]$g.DriverVersion; if($dv){ $dd=''; $old=''; if($g.DriverDate){ $dd='  ('+([datetime]$g.DriverDate).ToString('yyyy-MM-dd')+')'; if(([datetime]$g.DriverDate) -lt (Get-Date).AddYears(-1)){ $old='  - older than 1 year' } }; if(($g.Name -match 'NVIDIA') -and ($dv.Split('.').Count -ge 4)){ $dx=$dv.Split('.')[2]+$dv.Split('.')[3]; if($dx.Length -ge 5){ $dx=$dx.Substring($dx.Length-5); $dv=$dx.Substring(0,3)+'.'+$dx.Substring(3) } }; $dl='GPU driver'; if($gpus.Count -gt 1){ $dl='GPU driver '+([array]::IndexOf($gpus,$g)+1) }; Add-Row $dl ($dv+$dd+$old) } };"
+set "FT_PART6=$pm=@{}; try { Get-CimInstance -Namespace root/microsoft/windows/storage -ClassName MSFT_PhysicalDisk -ErrorAction Stop | ForEach-Object { $pm[[string]$_.DeviceId]=$_ } } catch { }; $disks=@(Get-CimInstance Win32_DiskDrive | Where-Object { $_.InterfaceType -ne 'USB' -and $_.PNPDeviceID -notmatch 'USBSTOR' } | Sort-Object { [int]$_.Index }); $di=0; foreach($dk in $disks){ $di++; $pd=$pm[[string]$dk.Index]; $dt=''; if($pd){ if($pd.BusType -eq 17){ $dt='NVMe SSD' } elseif($pd.MediaType -eq 4){ $dt='SATA SSD' } elseif($pd.MediaType -eq 3){ $dt='HDD' } }; if(-not $dt){ if($dk.PNPDeviceID -match 'NVME'){ $dt='NVMe SSD' } elseif($dk.Model -match 'SSD'){ $dt='SSD' } }; $hs=''; if($pd){ $hs=@{0='Healthy';1='Warning';2='Unhealthy'}[[int]$pd.HealthStatus] } elseif($dk.Status -eq 'OK'){ $hs='Healthy' } else { $hs=[string]$dk.Status }; $ex=(@($dt,$hs) | Where-Object { $_ }) -join ', '; $dl=(Clean $dk.Model)+'  -  '+(Sz $dk.Size); if($ex){ $dl=$dl+'  ('+$ex+')' }; Add-Row ('Storage '+$di) $dl };"
+set "FT_PART7=function Qual($w,$h){ if($w -ge 7680){ '8K UHD 4320p' } elseif(($w -ge 5120) -and ($h -le 1600)){ '32:9 Ultrawide' } elseif(($w -ge 3840) -and ($h -ge 2000)){ '4K UHD 2160p' } elseif(($w -ge 3440) -and ($h -ge 1440)){ 'Ultrawide QHD' } elseif(($w -ge 2560) -and ($h -le 1100)){ 'Ultrawide FHD' } elseif($w -ge 2560){ if($h -eq 1440){ 'QHD 1440p' } else { 'QHD+' } } elseif(($w -ge 1920) -and ($h -ge 1080)){ 'Full HD 1080p' } elseif($w -ge 1600){ 'HD+ 900p' } elseif(($w -ge 1280) -and ($h -ge 720)){ 'HD 720p' } else { '' } }; function Mode($rw,$rh,$hz){ $t=''+$rw+'x'+$rh; $ql=Qual $rw $rh; if($ql){ $t=$t+' ('+$ql+')' }; if($hz -gt 1){ $t=$t+'  -  '+$hz+' Hz' }; $t }; $csrc='using System; using System.Runtime.InteropServices; public class DM { [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct DEVMODE { [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string dmDeviceName; public short dmSpecVersion; public short dmDriverVersion; public short dmSize; public short dmDriverExtra; public int dmFields; public int dmPositionX; public int dmPositionY; public int dmDisplayOrientation; public int dmDisplayFixedOutput; public short dmColor; public short dmDuplex; public short dmYResolution; public short dmTTOption; public short dmCollate; [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string dmFormName; public short dmLogPixels; public int dmBitsPerPel; public int dmPelsWidth; public int dmPelsHeight; public int dmDisplayFlags; public int dmDisplayFrequency; public int dmICMMethod; public int dmICMIntent; public int dmMediaType; public int dmDitherType; public int dmReserved1; public int dmReserved2; public int dmPanningWidth; public int dmPanningHeight; } [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct DD { public int cb; [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string DeviceName; [MarshalAs(UnmanagedType.ByValTStr, SizeConst=128)] public string DeviceString; public int StateFlags; [MarshalAs(UnmanagedType.ByValTStr, SizeConst=128)] public string DeviceID; [MarshalAs(UnmanagedType.ByValTStr, SizeConst=128)] public string DeviceKey; } [DllImport(QQuser32.dllQQ, CharSet=CharSet.Unicode)] public static extern bool EnumDisplayDevices(string dev, uint i, ref DD d, uint f); [DllImport(QQuser32.dllQQ, CharSet=CharSet.Unicode)] public static extern bool EnumDisplaySettings(string dev, int m, ref DEVMODE dm); public static string[] Get() { System.Collections.ArrayList r = new System.Collections.ArrayList(); DD d = new DD(); d.cb = Marshal.SizeOf(d); for (uint i = 0; EnumDisplayDevices(null, i, ref d, 0); i++) { if ((d.StateFlags & 1) == 1) { DEVMODE m = new DEVMODE(); m.dmSize = (short)Marshal.SizeOf(m); if (EnumDisplaySettings(d.DeviceName, -1, ref m)) { DD n = new DD(); n.cb = Marshal.SizeOf(n); string id = QQQQ; if (EnumDisplayDevices(d.DeviceName, 0, ref n, 0)) { id = n.DeviceID; } r.Add(id + QQ|QQ + m.dmPelsWidth + QQ|QQ + m.dmPelsHeight + QQ|QQ + m.dmDisplayFrequency); } } d.cb = Marshal.SizeOf(d); } return (string[])r.ToArray(typeof(string)); } }'; $dl=@(); try { if(-not ('DM' -as [type])){ Add-Type -TypeDefinition ($csrc.Replace('QQ',[string][char]34)) }; foreach($e in @([DM]::Get())){ $q=([string]$e).Split('|'); $cd0=''; $tk=$q[0].Split('\'); if($tk.Count -ge 2){ $cd0=$tk[1] }; if([int]$q[1] -gt 0){ $dl+=,@($cd0,(Mode ([int]$q[1]) ([int]$q[2]) ([int]$q[3]))) } } } catch { }; if($dl.Count -eq 0){ foreach($gx in $gpus){ if($gx.CurrentHorizontalResolution -gt 0){ $dl+=,@('',(Mode ([int]$gx.CurrentHorizontalResolution) ([int]$gx.CurrentVerticalResolution) ([int]$gx.CurrentRefreshRate))) } } };"
+set "FT_PART8=$mons=@(); try { $mons=@(Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorID -ErrorAction Stop | Where-Object { $_.Active -ne $false }) } catch { }; $bp=@{}; try { Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBasicDisplayParams -ErrorAction Stop | ForEach-Object { $bp[[string]$_.InstanceName]=$_ } } catch { }; $mkm=@{GSM='LG';SAM='Samsung';DEL='Dell';AOC='AOC';GBT='Gigabyte';ACR='Acer';AUS='ASUS';MSI='MSI';BNQ='BenQ';HKC='HKC';PHL='Philips';HWP='HP';LEN='Lenovo';VSC='ViewSonic';SNY='Sony';IVM='Iiyama';NEC='NEC';BOE='BOE';AUO='AUO';LGD='LG Display';SDC='Samsung Display';TCL='TCL';XMI='Xiaomi'}; $mn=@(); $mc=@(); foreach($mo in $mons){ $nm=(-join ($mo.UserFriendlyName | Where-Object { $_ -gt 0 } | ForEach-Object { [char]$_ })).Trim(); $cd=(-join ($mo.ManufacturerName | Where-Object { $_ -gt 0 } | ForEach-Object { [char]$_ })).Trim(); $bn=$mkm[$cd]; if(-not $bn){ $bn=$cd }; if($nm){ if($nm -notmatch ('\A'+[regex]::Escape($bn))){ $nm=$bn+' '+$nm } } else { $nm=$bn+' monitor' }; $inch=''; $bq2=$bp[[string]$mo.InstanceName]; if($bq2 -and ($bq2.MaxHorizontalImageSize -gt 0) -and ($bq2.MaxVerticalImageSize -gt 0)){ $dg=[math]::Round([math]::Sqrt([math]::Pow($bq2.MaxHorizontalImageSize,2)+[math]::Pow($bq2.MaxVerticalImageSize,2))/2.54); if(($dg -ge 10) -and ($dg -le 100)){ $inch='  -  '+$dg+'-inch' } }; $mn+=($nm.Trim()+$inch); $ik=([string]$mo.InstanceName).Split('\'); $ic=''; if($ik.Count -ge 2){ $ic=$ik[1] }; $mc+=$ic }; if($mn.Count -eq 0){ for($mi=0; $mi -lt $dl.Count; $mi++){ $ml='Monitor'; if($dl.Count -gt 1){ $ml='Monitor '+($mi+1) }; Add-Row $ml $dl[$mi][1] } } else { for($mi=0; $mi -lt $mn.Count; $mi++){ $mt=$mn[$mi]; $fd=$null; foreach($x in $dl){ if($x[0] -and ($x[0] -eq $mc[$mi])){ $fd=$x[1] } }; if(-not $fd){ if($mn.Count -eq $dl.Count){ $fd=$dl[$mi][1] } elseif(($mn.Count -eq 1) -and ($dl.Count -ge 1)){ $fd=$dl[0][1] } }; if($fd){ $mt=$mt+'  -  '+$fd }; $ml='Monitor'; if($mn.Count -gt 1){ $ml='Monitor '+($mi+1) }; Add-Row $ml $mt } };"
+set "FT_PART9=$nics=@(Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.PhysicalAdapter -eq $true -and $_.Name -notmatch 'Virtual|VMware|VirtualBox|Hyper-V|Bluetooth|TAP|VPN|Miniport|Loopback|Tunnel|WAN' }); $ni=0; foreach($nc in $nics){ $ni++; $nt='Ethernet'; if($nc.Name -match 'Wi-?Fi|Wireless|802\.11|WLAN'){ $nt='Wi-Fi' }; $nl='Network'; if($nics.Count -gt 1){ $nl='Network '+$ni }; Add-Row $nl ((Clean $nc.Name)+'  ('+$nt+')') }; if($os){ $up=(Get-Date)-$os.LastBootUpTime; $us=('{0} days {1} hours' -f [int]$up.Days,$up.Hours); if($up.Days -ge 7){ $us=$us+'  (restart recommended)' }; Add-Row 'Uptime' $us };"
+set "FT_PART10=$w1=[math]::Max(11,($rows|ForEach-Object{ ([string]$_[0]).Length }|Measure-Object -Maximum).Maximum); $w2=[math]::Max(7,($rows|ForEach-Object{ ([string]$_[1]).Length }|Measure-Object -Maximum).Maximum); $gd=([string][char]27)+'[38;5;220m'; $rs=([string][char]27)+'[0m'; function Ln { $gd+'+'+('-'*($w1+2))+'+'+('-'*($w2+2))+'+'+$rs }; function Rw($s1,$s2){ $gd+'|'+$rs+' '+([string]$s1).PadRight($w1)+' '+$gd+'|'+$rs+' '+([string]$s2).PadRight($w2)+' '+$gd+'|'+$rs }; Ln; Rw 'Component' 'Details'; Ln; foreach($r in $rows){ Rw ($r[0]) ($r[1]) }; Ln; if($env:FT_QFILE -and ($mbv -notmatch '\AUnknown')){ [IO.File]::WriteAllText($env:FT_QFILE,[uri]::EscapeDataString($mbv+' BIOS update')) }"
+set "FT_PS=$s=((1..10)|ForEach-Object{ [Environment]::GetEnvironmentVariable('FT_PART'+$_) }) -join ' '; & ([scriptblock]::Create($s))"
 set "FT_SHOW=1"
 call :psx
+for /l %%i in (1,1,10) do set "FT_PART%%i="
 echo.
-echo [CPU]
-set "FT_PS=Get-CimInstance Win32_Processor | ForEach-Object { 'CPU     : ' + $_.Name.Trim() + ' (' + $_.NumberOfCores + ' cores, ' + $_.NumberOfLogicalProcessors + ' threads)' }"
-set "FT_SHOW=1"
-call :psx
-echo.
-echo [Memory]
-set "FT_PS=$c=Get-CimInstance Win32_OperatingSystem; $t=[math]::Round($c.TotalVisibleMemorySize/1MB,1); $f=[math]::Round($c.FreePhysicalMemory/1MB,1); ('RAM     : {0} GB total, {1} GB free' -f $t,$f)"
-set "FT_SHOW=1"
-call :psx
-echo.
-echo [Graphics]
-set "FT_PS=Get-CimInstance Win32_VideoController | ForEach-Object { 'GPU     : ' + $_.Name + ' (driver ' + $_.DriverVersion + ')' }"
-set "FT_SHOW=1"
-call :psx
-echo.
-echo [Disk space]
-set "FT_PS=Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' | ForEach-Object { ('Drive {0}  {1} GB free of {2} GB ({3}%% used)' -f $_.DeviceID,[math]::Round($_.FreeSpace/1GB,1),[math]::Round($_.Size/1GB,1),[math]::Round(100-100*$_.FreeSpace/$_.Size)) }"
-set "FT_SHOW=1"
-call :psx
-echo.
-echo [Disk health - SMART status]
-set "FT_PS=Get-PhysicalDisk | ForEach-Object { ('Disk {0} : {1}, health {2}, status {3}' -f $_.FriendlyName,$_.MediaType,$_.HealthStatus,$_.OperationalStatus) }"
-set "FT_SHOW=1"
-call :psx
-echo.
-echo ==============================================================
 exit /b
-
 
 rem ==================================================================
 rem  9) SYSTEM REPORTS
 rem ==================================================================
 :Diagnostics
 call :header "9) SYSTEM REPORTS"
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% System Diagnostic Report (perfmon /report)  [~60 sec]
-echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Reliability Monitor (crash/error history)
-echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Event Viewer (full log browser)
-echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Recent Critical/Error events (last 24h, quick view)
-echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Resource Monitor (CPU/RAM/Disk/Network live)
-echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Task Manager
-echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Performance Monitor (live counters)
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% System Diagnostic Report     %cD%- Full PC health report (about 60 seconds)%cX%
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Reliability Monitor          %cD%- History of crashes and errors on a timeline%cX%
+echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Event Viewer                 %cD%- Browse every Windows log%cX%
+echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Recent Critical/Error events %cD%- Quick list of problems from the last 24 hours%cX%
+echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Resource Monitor             %cD%- Live CPU, RAM, disk and network use%cX%
+echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Task Manager                 %cD%- See and close running programs%cX%
+echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Performance Monitor          %cD%- Live performance counters%cX%
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
 echo.
 set "M="
@@ -3006,6 +2980,13 @@ call :banner
 echo    %cC%■%cX% %cW%%~1%cX%
 echo    %cD%!TODAY! %time:~0,8%   -   !WINVER!%cX%
 echo.
+exit /b
+
+rem --- Small header (no big logo) for screens with a lot of output, so the title never scrolls away ---
+:header_compact
+cls
+echo    %cC%■%cX% %cW%MESHAL FIX%cX% %cD%-%cX% %cW%%~1%cX%   %cD%!TODAY! %time:~0,8%   -   !WINVER!%cX%
+echo   %cC%──────────────────────────────────────────────────────────────────────────%cX%
 exit /b
 
 rem --- Writes a line with timestamp to the log file ---
@@ -3731,7 +3712,7 @@ exit 0
 #RST_END
 #GD_BEGIN
 # ====================================================================
-#  Game Doctor engine. Started only by Gaming Fixes, option 10.
+#  Game Doctor engine. Started only by Gaming Fixes, option 9. No menu: it asks for the game path, runs the full diagnosis, then offers repairs.
 #  Evidence-based game diagnostics and repair. It is NOT an optimizer.
 #  Rule 1: no evidence = no problem. Nothing is reported without proof.
 #  Rule 2: nothing is changed without asking, and a backup comes first.
@@ -4942,31 +4923,38 @@ function Run-Repair {
 }
 
 # ------------------------------------------------------------------- UI
-function Box([string]$t) { return ([string][char]0x2551 + ' ' + $t.PadRight(50).Substring(0, 50) + ' ' + [string][char]0x2551) }
-
-function Show-Menu {
-    Clear-Host
-    $h = [string][char]0x2550
-    $p = $script:GamePath
-    if ($p.Length -gt 48) { $p = '...' + $p.Substring($p.Length - 45) }
-    Line ([string][char]0x2554 + ($h * 52) + [string][char]0x2557) 'Yellow'
-    Line (Box '                  GAME DOCTOR') 'Yellow'
-    Line ([string][char]0x2560 + ($h * 52) + [string][char]0x2563) 'Yellow'
-    Line (Box '') 'Yellow'
-    Line (Box 'Game Path:') 'Yellow'
-    Line (Box $p) 'White'
-    Line (Box '') 'Yellow'
-    foreach ($l in @('[1] Scan Game', '[2] Test Launch', '[3] Full Diagnosis', '[4] Repair Detected Problems', '[5] View Report', '[6] Exit', '[7] Change Game Path')) { Line (Box $l) 'Yellow' }
-    Line (Box '') 'Yellow'
-    Line ([string][char]0x255A + ($h * 52) + [string][char]0x255D) 'Yellow'
-    Line ''
+# Same logo as the toolkit banner: gold frame, white letters
+function Show-Banner {
+    $rows = @(
+        '┌────────────────────────────────────────────────────────────────────────┐'
+        '│                                                                        │'
+        '│ ███╗   ███╗███████╗███████╗██╗  ██╗ █████╗ ██╗     ███████╗██╗██╗  ██╗ │'
+        '│ ████╗ ████║██╔════╝██╔════╝██║  ██║██╔══██╗██║     ██╔════╝██║╚██╗██╔╝ │'
+        '│ ██╔████╔██║█████╗  ███████╗███████║███████║██║     █████╗  ██║ ╚███╔╝  │'
+        '│ ██║╚██╔╝██║██╔══╝  ╚════██║██╔══██║██╔══██║██║     ██╔══╝  ██║ ██╔██╗  │'
+        '│ ██║ ╚═╝ ██║███████╗███████║██║  ██║██║  ██║███████╗██║     ██║██╔╝ ██╗ │'
+        '│ ╚═╝     ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝╚═╝  ╚═╝ │'
+        '│                                                                        │'
+        '└────────────────────────────────────────────────────────────────────────┘'
+    )
+    foreach ($r in $rows) {
+        if ($r.Length -gt 2 -and $r[1] -ne ([char]0x2500) -and $r.Trim().Length -gt 2 -and $r -match '[\u2588\u2557\u2554\u255D\u2550\u2551\u255A]') {
+            Write-Host '  ' -NoNewline
+            Write-Host $r.Substring(0, 1) -NoNewline -ForegroundColor Yellow
+            Write-Host $r.Substring(1, $r.Length - 2) -NoNewline -ForegroundColor White
+            Write-Host $r.Substring($r.Length - 1) -ForegroundColor Yellow
+        }
+        else { Write-Host ('  ' + $r) -ForegroundColor Yellow }
+    }
+    Write-Host ''
 }
 
 function Read-GamePath {
     while ($true) {
         Line ''
-        Line 'Enter Game Path (leave empty to exit):' 'White'
-        $p = (Read-Host '>').Trim().Trim('"')
+        Line 'Paste the full path of the game folder (example: D:\Games\MyGame).' 'White'
+        Line 'Leave empty to exit:' 'DarkGray'
+        $p = (Read-Host 'Game Path').Trim().Trim('"')
         if (-not $p) { return $false }
         $err = Test-GamePath $p
         if ($err) { Line ('  ' + $err) 'Red'; continue }
@@ -4981,29 +4969,15 @@ function Read-GamePath {
 # ------------------------------------------------------------------ main
 try {
     Clear-Host
+    Show-Banner
     Line 'GAME DOCTOR - evidence-based game diagnostics and repair' 'Yellow'
-    Line 'No evidence = no problem. Nothing is changed without your approval.' 'Gray'
+    Line 'Give it the game folder. It checks everything by itself and only reports problems it can prove.' 'Gray'
+    Line 'Nothing is changed without your approval, and a backup is made first.' 'Gray'
     if (-not (Read-GamePath)) { exit 0 }
-    while ($true) {
-        Show-Menu
-        $c = (Read-Host 'Select an option').Trim()
-        Line ''
-        if ($c -eq '1') { Run-ScanOnly; Pause-Key }
-        elseif ($c -eq '2') { Run-LaunchOnly; Pause-Key }
-        elseif ($c -eq '3') { Run-Full; Pause-Key }
-        elseif ($c -eq '4') {
-            if (-not $script:ScanDone) { Line 'No diagnosis has been run yet. Running a scan first...' 'Cyan'; Run-Scan $false; Check-CrashHistory }
-            Run-Repair; Pause-Key
-        }
-        elseif ($c -eq '5') {
-            if ($script:G) { Save-Report }
-            if ($script:ReportFile -and (Test-Path -LiteralPath $script:ReportFile)) { Get-Content -LiteralPath $script:ReportFile | ForEach-Object { Write-Host $_ } }
-            else { Line 'No report yet. Run Scan Game or Full Diagnosis first.' 'Yellow' }
-            Pause-Key
-        }
-        elseif ($c -eq '6') { break }
-        elseif ($c -eq '7') { [void](Read-GamePath) }
-    }
+    Line ''
+    Run-Full
+    if (@(Issues).Count -gt 0) { Run-Repair }
+    Pause-Key
 } catch {
     Line ('Unexpected problem: ' + $_.Exception.Message) 'Red'
     Log ('Unexpected error: ' + $_.Exception.Message)
