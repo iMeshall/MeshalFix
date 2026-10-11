@@ -125,7 +125,7 @@ echo.
 set "M="
 set /p "M=  %cC%●%cX% Select an option: "
 
-if "%M%"=="1" goto :CLEAN_MENU
+if "%M%"=="1" goto :CLEAN_ENTRY
 if "%M%"=="2" goto :REPAIR_ENTRY
 if "%M%"=="3" goto :TRON_ENTRY
 if "%M%"=="4" goto :GAME_ENTRY
@@ -151,28 +151,106 @@ exit /b 0
 rem ==================================================================
 rem  1) CLEANING TOOLS
 rem ==================================================================
+:CLEAN_ENTRY
+set "RAD_DEEP=n/a"
+set "RAD_THUMB=n/a"
+set "RAD_ORPH=n/a"
+set "RAD_BIN=n/a"
+set "RAD_TOTAL=n/a"
+call :radar_scan FULL
+
 :CLEAN_MENU
 call :header "1) CLEANING TOOLS"
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Deep clean               %cD%- Temp files, Prefetch, browser and app caches, RAM cache%cX%
-echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Empty Recycle Bin        %cD%- Permanently delete everything in the Recycle Bin%cX%
-echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Thumbnail and icon cache %cD%- Fixes wrong icons and missing picture previews%cX%
-echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Disk Cleanup (cleanmgr)  %cD%- Windows built-in cleaner for system leftovers%cX%
-echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Optimize drives          %cD%- TRIM for SSD, defrag for HDD - keeps drives fast%cX%
-echo    %cC%[%cW%A%cC%]%cX% %cC%●%cX% Run ALL cleaning         %cD%- Runs options 1 to 4 one after another%cX%
+echo   %cC%Space Reclaim Radar%cX% %cD%- estimated space each option can free%cX%
+echo.
+call :radar_row 1 "Deep clean" DEEP "Temp, caches, Disk Cleanup, drive optimize, RAM cache"
+call :radar_row 2 "Thumbnail and icon cache" THUMB "Fixes wrong icons and missing picture previews"
+call :radar_row 3 "Orphaned File Scanner" ORPH "Leftovers of removed programs - you review them"
+call :radar_row 4 "Recycle Bin" BIN "Permanently delete everything in the Recycle Bin"
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
+echo.
+echo   %cD%Estimated total: %cG%!RAD_TOTAL!%cD%  (Disk Cleanup and Windows.old may free more)%cX%
 echo.
 set "M="
 set /p "M=  Select an option: "
 set "ACT="
 if "%M%"=="1" set "ACT=clean_deep"
-if "%M%"=="2" set "ACT=clean_recycle"
-if "%M%"=="3" set "ACT=rebuild_icons"
-if "%M%"=="4" set "ACT=clean_cleanmgr"
-if "%M%"=="5" set "ACT=clean_optimize"
-if /i "%M%"=="A" set "ACT=clean_all"
+if "%M%"=="2" set "ACT=rebuild_icons"
+if "%M%"=="4" set "ACT=clean_recycle"
 if "%M%"=="0" goto :MAIN_MENU
-call :run_clean %ACT%
+if "%M%"=="3" (
+    call :clean_orphans
+    call :radar_scan FAST
+    goto :CLEAN_MENU
+)
+if defined ACT (
+    call :run_clean %ACT%
+    call :radar_scan FAST
+)
 goto :CLEAN_MENU
+
+rem --- One line of the cleaning menu with its radar size ---
+rem --- %~1 = key, %~2 = name, %~3 = radar value (DEEP, THUMB, ORPH, BIN), %~4 = description ---
+:radar_row
+set "RN=%~2                                "
+set "RS=         !RAD_%~3!"
+echo    %cC%[%cW%%~1%cC%]%cX% %cC%●%cX% !RN:~0,26!%cG%!RS:~-9!%cX%   %cD%- %~4%cX%
+exit /b
+
+rem --- Space Reclaim Radar: estimates how much space each cleaning option can free. Nothing is deleted. ---
+rem --- %~1 = FULL (also scans for orphaned folders) or FAST (reuses the last orphan result) ---
+:radar_scan
+call :header "1) CLEANING TOOLS"
+if /i "%~1"=="FULL" (
+    call :info "Space Reclaim Radar is scanning your PC to estimate how much space can be freed. This can take a minute..."
+) else (
+    call :info "Updating the Space Reclaim Radar..."
+)
+call :cl_extract
+if not exist "%FT_CLPS%" exit /b
+set "FT_CLMODE=RADAR"
+set "FT_RADAR=%~1"
+set "FT_SELF=%SCRIPT%"
+set "FT_ORPHFILE=%TEMP%\FixToolkit_orphans.txt"
+if /i "%~1"=="FULL" del /f /q "%FT_ORPHFILE%" >nul 2>&1
+type nul > "%FT_OUT%"
+start "" /wait /min cmd /c powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "%FT_CLPS%" ^> "%FT_OUT%" 2^>^&1
+for /f "usebackq tokens=1,* delims==" %%A in (`findstr /b /c:"DEEP=" /c:"THUMB=" /c:"ORPH=" /c:"BIN=" /c:"TOTAL=" "%FT_OUT%"`) do set "RAD_%%A=%%B"
+call :log "Radar: deep !RAD_DEEP!, icons !RAD_THUMB!, orphans !RAD_ORPH!, bin !RAD_BIN!"
+exit /b
+
+rem --- [3] Orphaned File Scanner: opens in its own window because it asks questions ---
+:clean_orphans
+call :header "ORPHANED FILE SCANNER"
+call :info "Looks for folders that probably belong to programs that are no longer installed."
+call :info "You review the list. Nothing is removed unless you pick it and type DELETE. Removed folders go to the Recycle Bin."
+call :cl_extract
+if not exist "%FT_CLPS%" (
+    call :err "Could not prepare the scanner engine."
+    call :pause
+    exit /b
+)
+set "FT_CLMODE=ORPHANS"
+set "FT_RADAR="
+set "FT_SELF=%SCRIPT%"
+set "FT_ORPHFILE=%TEMP%\FixToolkit_orphans.txt"
+set "FT_LOGDIR=%LOGDIR%"
+set "FT_LOGFILE=%LOGFILE%"
+call :log "Orphaned File Scanner opened"
+start "Orphaned File Scanner" /wait powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%FT_CLPS%"
+call :log "Orphaned File Scanner closed"
+exit /b
+
+rem --- Cuts the cleaning engine (stored at the very end of this file) into a temp .ps1 once per session ---
+:cl_extract
+set "FT_SELF=%SCRIPT%"
+set "FT_CLPS=%TEMP%\FixToolkit_clean.ps1"
+if defined CL_READY if exist "%FT_CLPS%" exit /b
+del /f /q "%FT_CLPS%" >nul 2>&1
+set "FT_PS=$t=[IO.File]::ReadAllText($env:FT_SELF,[Text.Encoding]::UTF8); $i=$t.LastIndexOf('#CL_'+'BEGIN'); $j=$t.LastIndexOf('#CL_'+'END'); if($i -lt 0 -or $j -le $i){exit 2}; $b=$t.Substring($i+9,$j-$i-9); [IO.File]::WriteAllText($env:FT_CLPS,$b,(New-Object Text.UTF8Encoding $true))"
+call :psx
+if exist "%FT_CLPS%" set "CL_READY=1"
+exit /b
 
 rem --- Runs one cleaning action and shows how much space was freed ---
 :run_clean
@@ -220,7 +298,8 @@ exit /b 0
 
 rem --- [1] DEEP CLEAN: every junk-file cleaning job in ONE option ---
 :clean_deep
-call :info "Cleans: temp files and logs, Prefetch, Windows Update cache, error reports and dumps, browser caches, app caches, cached RAM."
+call :info "Cleans: temp files and logs, Prefetch, Windows Update cache, error reports and dumps, browser caches, app caches, Disk Cleanup, drive optimization and cached RAM."
+call :info "Disk Cleanup runs with a safe preset (no window). Drives are optimized with TRIM for SSD and defrag for HDD - you are asked first if an HDD is found."
 call :info "Cached RAM uses Microsoft RAMMap - downloaded once into the Tools folder (needs internet) and checked for a Microsoft signature."
 call :info "Logins are NOT touched. Windows.old is offered at the end - only if it exists, and you must type DELETE."
 call :ask "Start the deep clean now?"
@@ -232,29 +311,46 @@ set "DEEPCHK="
 call :check_running chrome.exe msedge.exe firefox.exe brave.exe opera.exe vivaldi.exe browser.exe chromium.exe librewolf.exe waterfox.exe discord.exe spotify.exe slack.exe Teams.exe ms-teams.exe Telegram.exe Code.exe steam.exe steamwebhelper.exe EpicGamesLauncher.exe Battle.net.exe EADesktop.exe UbisoftConnect.exe upc.exe
 if defined RUNNING_LIST (
     call :warn "Still running:!RUNNING_LIST!"
-    call :warn "Close browsers and apps completely - also from the system tray - for the best result. Locked files will be skipped."
-    call :ask "Continue anyway?"
+    call :warn "You must close these apps for the deep clean to work. Save your work first."
+    call :confirm "Close the apps now?"
     if "!CONFIRMED!"=="0" (
-        call :info "Cancelled."
+        call :info "Cancelled - the apps must be closed first."
         exit /b
+    )
+    call :step 1 1 "Closing the apps..."
+    set "KILLARGS="
+    for %%P in (!RUNNING_LIST!) do set "KILLARGS=!KILLARGS! /im %%P"
+    taskkill /f /t !KILLARGS! >nul 2>&1
+    timeout /t 2 /nobreak >nul
+    call :check_running chrome.exe msedge.exe firefox.exe brave.exe opera.exe vivaldi.exe browser.exe chromium.exe librewolf.exe waterfox.exe discord.exe spotify.exe slack.exe Teams.exe ms-teams.exe Telegram.exe Code.exe steam.exe steamwebhelper.exe EpicGamesLauncher.exe Battle.net.exe EADesktop.exe UbisoftConnect.exe upc.exe
+    if defined RUNNING_LIST (
+        call :warn "Could not close:!RUNNING_LIST! - locked files will be skipped."
+    ) else (
+        call :ok "All apps were closed."
     )
 )
 set "DEEPCHK=1"
-call :info "=== Part 1 of 8: Temp files and logs ==="
+call :info "=== Part 1 of 10: Temp files and logs ==="
 call :clean_temp
-call :info "=== Part 2 of 8: Prefetch ==="
+call :info "=== Part 2 of 10: Prefetch ==="
 call :clean_prefetch
-call :info "=== Part 3 of 8: Windows Update cache ==="
+call :info "=== Part 3 of 10: Windows Update cache ==="
 call :clean_wu_cache
-call :info "=== Part 4 of 8: Error reports and dumps ==="
+call :info "=== Part 4 of 10: Error reports and dumps ==="
 call :clean_wer
-call :info "=== Part 5 of 8: Browser caches ==="
+call :info "=== Part 5 of 10: Browser caches ==="
 call :clean_browsers
-call :info "=== Part 6 of 8: App caches ==="
+call :info "=== Part 6 of 10: App caches ==="
 call :clean_apps
-call :info "=== Part 7 of 8: RAM cache ==="
+call :info "=== Part 7 of 10: Disk Cleanup and component cleanup ==="
+set "ALLMODE=1"
+call :clean_cleanmgr
+set "ALLMODE="
+call :info "=== Part 8 of 10: Optimize drives ==="
+call :clean_optimize
+call :info "=== Part 9 of 10: RAM cache ==="
 call :clean_ram
-call :info "=== Part 8 of 8: Windows.old ==="
+call :info "=== Part 10 of 10: Windows.old ==="
 call :clean_winold
 set "DEEPCHK="
 call :ok "Deep clean finished."
@@ -519,11 +615,11 @@ call :clear_folder "%ProgramData%\NVIDIA Corporation\Downloader"
 call :ok "App caches cleared. Logins, saves and game files were NOT touched."
 exit /b
 
-rem --- [4] Disk Cleanup with a safe sagerun preset ---
+rem --- Part of deep clean: Disk Cleanup with a safe sagerun preset ---
 :clean_cleanmgr
 set "CM_VC=HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches"
 if defined ALLMODE (
-    call :info "Run ALL mode: the safe Disk Cleanup preset is used (no window to choose options)."
+    call :info "Deep clean: the safe Disk Cleanup preset is used (no window to choose options)."
 ) else (
     call :info "Opens the FULL Disk Cleanup window of Windows with ALL its options."
     call :info "The safe options are already ticked. Tick more only if you understand them."
@@ -654,38 +750,22 @@ if defined OLD_LEFT (
 )
 exit /b
 
-rem --- [5] Optimize drives: TRIM on SSD, defrag on HDD (not part of Run ALL) ---
+rem --- Part of deep clean: optimize drives. TRIM on SSD, defrag on HDD (asks first only when an HDD exists) ---
 :clean_optimize
 call :info "Windows chooses the right method for each drive: TRIM for SSD (fast), defrag for HDD (can take a long time)."
-call :ask "Optimize all drives now? You can keep using the PC, but it may feel slower on an HDD meanwhile."
-if "%CONFIRMED%"=="0" (
-    call :info "Cancelled."
-    exit /b
+set "FT_PS=if(@(Get-PhysicalDisk -ErrorAction SilentlyContinue | Where-Object { $_.MediaType -eq 'HDD' }).Count -gt 0){exit 1}else{exit 0}"
+call :psx
+if errorlevel 1 (
+    call :confirm "A hard drive - HDD - was found. Defragmenting it can take a long time and the PC may feel slower meanwhile. Optimize the drives now?"
+    if "!CONFIRMED!"=="0" (
+        call :info "Drive optimization skipped."
+        exit /b
+    )
 )
 call :step 1 1 "Optimizing drives - wait until it finishes..."
 defrag.exe /C /O /U
 call :log "Drive optimization finished"
 call :ok "Drive optimization finished."
-exit /b
-
-rem --- [A] Run all safe cleaning (Windows.old is NOT included) ---
-:clean_all
-call :confirm "Runs ALL safe cleaning: deep clean (temp, Prefetch, update cache, error reports, browsers, apps), Recycle Bin, thumbnails and Disk Cleanup. Windows.old is NOT touched."
-if "%CONFIRMED%"=="0" (
-    call :info "Cancelled."
-    exit /b
-)
-set "ALLMODE=1"
-call :info "=== Task 1 of 4: Deep clean ==="
-call :clean_deep
-call :info "=== Task 2 of 4: Recycle Bin ==="
-call :clean_recycle
-call :info "=== Task 3 of 4: Thumbnail and icon cache ==="
-call :rebuild_icons
-call :info "=== Task 4 of 4: Disk Cleanup ==="
-call :clean_cleanmgr
-set "ALLMODE="
-call :ok "All safe cleaning tasks finished."
 exit /b
 
 rem ==================================================================
@@ -1088,7 +1168,7 @@ echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% DirectX and Visual C++        %cD%- Chec
 echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Game audio fix                %cD%- Restart Windows Audio (no sound or crackling)%cX%
 echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Font cache rebuild            %cD%- Fixes missing or garbled text%cX%
 echo    %cC%[%cW%8%cC%]%cX% %cC%●%cX% Graphics driver clean install %cD%- DDU + NVCleanstall: remove the old driver, install a clean one%cX%
-echo    %cC%[%cW%9%cC%]%cX% %cC%●%cX% Game Doctor                   %cD%- Enter a game folder, it finds problems and offers fixes%cX%
+echo    %cC%[%cW%9%cC%]%cX% %cC%●%cX% Game Doctor                   %cD%- Enter a game folder: real launch test, proven problems only%cX%
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
 echo.
 set "M="
@@ -1683,8 +1763,8 @@ exit /b 0
 
 rem --- [10] Game Doctor: evidence-based diagnosis of ONE game (runs in its own window) ---
 :game_doctor
-call :info "Enter the game folder - Game Doctor checks everything by itself: files, config, dependencies, a real launch test and crash proof."
-call :info "If nothing is wrong it says GAME HEALTHY and changes nothing. Every repair asks first and makes a backup."
+call :info "Enter the game folder. Game Doctor checks the files, then really starts the game to see what happens. It reports a problem only with proof, and re-tests after any repair."
+call :info "If the game starts fine it changes nothing. Every repair asks first, makes a backup, and is confirmed by a new launch test."
 set "FT_SELF=%SCRIPT%"
 set "FT_GDPS=%TEMP%\FixToolkit_gamedoctor.ps1"
 del /f /q "%FT_GDPS%" >nul 2>&1
@@ -2216,7 +2296,7 @@ call :header "6) TOOLS - !CUR_TITLE!"
 for /l %%n in (1,1,!TL_%CUR_CAT%_N!) do (
     set "id=0%%n"
     set "dn=%%n"
-    echo    %cC%[%cW%!dn!%cC%]%cX% %cC%●%cX% !TL_%CUR_CAT%_%%n_NAME!
+    call :tool_line %%n
 )
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to the tools menu
 echo.
@@ -2234,6 +2314,25 @@ if not defined SEL goto :TOOLS_CATEGORY
 call :tool_run %CUR_CAT% !SEL!
 if errorlevel 1 call :pause
 goto :TOOLS_CATEGORY
+
+rem --- Prints one tool line: name in normal color, the (description) in gray after a dash ---
+:tool_line
+set "TN=!TL_%CUR_CAT%_%~1_NAME!"
+set "TD="
+set "TX=!TN:(=!"
+if not "!TX!"=="!TN!" for /f "tokens=1,* delims=(" %%a in ("!TN!") do (
+    set "TN=%%a"
+    set "TD=%%b"
+)
+if defined TD set "TD=!TD:~0,-1!"
+set "dn=%~1"
+if defined TD (
+    set "PAD=!TN!                                    "
+    echo    %cC%[%cW%!dn!%cC%]%cX% %cC%●%cX% !PAD:~0,36! %cD%- !TD!%cX%
+) else (
+    echo    %cC%[%cW%!dn!%cC%]%cX% %cC%●%cX% !TN!
+)
+exit /b
 
 rem --- Pads a typed number to two digits: 1 becomes 01 (variable name in %~1) ---
 :norm2
@@ -3714,9 +3813,12 @@ exit 0
 # ====================================================================
 #  Game Doctor engine. Started only by Gaming Fixes, option 9. No menu: it asks for the game path, runs the full diagnosis, then offers repairs.
 #  Evidence-based game diagnostics and repair. It is NOT an optimizer.
-#  Rule 1: no evidence = no problem. Nothing is reported without proof.
-#  Rule 2: nothing is changed without asking, and a backup comes first.
+#  Rule 1: the real launch test is the ground truth. A static finding (odd file, odd config, missing DLL)
+#          is only reported as a problem when it is PROOF (the OS or the launcher says so) or when the
+#          launch test really failed. If the game starts and stays running, such findings are only notes.
+#  Rule 2: nothing is changed without asking, a backup comes first, and the result is re-tested.
 #  Rule 3: DRM, anti-cheat and launchers are never bypassed.
+#  Rule 4: the report always says what was NOT checked. It never claims a game is perfect.
 # ====================================================================
 $ErrorActionPreference = 'Continue'
 try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
@@ -3787,20 +3889,46 @@ function Clear-Findings([string]$Cat) {
 
 function Add-Finding {
     param([string]$Category, [string]$Title, [string[]]$Evidence, [string]$Confidence,
-          [string]$Recommended = '', [string]$RepairId = '', $RepairData = $null)
+          [string]$Recommended = '', [string]$RepairId = '', $RepairData = $null, [string]$Kind = 'SUSPECT')
     $status = 'Informational'
     if ($Confidence -eq 'CONFIRMED') { $status = 'Confirmed' }
     elseif (($Confidence -eq 'HIGH') -or ($Confidence -eq 'MEDIUM')) { $status = 'Likely' }
     elseif ($Confidence -eq 'LOW') { $status = 'Possible' }
     [void]$script:Findings.Add([pscustomobject]@{
         Category = $Category; Title = $Title; Evidence = @($Evidence); Confidence = $Confidence
-        Status = $status; Recommended = $Recommended; RepairId = $RepairId; RepairData = $RepairData })
-    Log ('Finding [' + $Confidence + '] ' + $Category + ' - ' + $Title)
+        Status = $status; Recommended = $Recommended; RepairId = $RepairId; RepairData = $RepairData; Kind = $Kind })
+    Log ('Finding [' + $Confidence + '/' + $Kind + '] ' + $Category + ' - ' + $Title)
 }
 
-function Is-Issue($f) { return (@('CONFIRMED', 'HIGH', 'MEDIUM') -contains $f.Confidence) }
+# Result of the real launch test, in plain terms. NOT_TESTED / PASS / PASS_WEAK / INCONCLUSIVE / FAIL / FAIL_UNKNOWN
+function Get-LaunchState {
+    $att = @($script:Attempts)
+    if ($att.Count -eq 0) { return 'NOT_TESTED' }
+    $s = $att[$att.Count - 1].State
+    if ($s -eq 'RUNNING') { return 'PASS' }
+    if ($s -eq 'RUNNING_NO_WINDOW') { return 'PASS_WEAK' }
+    if ($s -eq 'EXITED_NORMALLY') { return 'INCONCLUSIVE' }
+    if (@('CRASHED', 'LAUNCH_FAILED', 'BLOCKED_BY_LAUNCHER') -contains $s) { return 'FAIL' }
+    return 'FAIL_UNKNOWN'
+}
+
+# PROOF findings (the OS, the launcher or the real launch say so) are always problems.
+# SUSPECT findings (heuristics on files / config / imports) are problems only if the launch test really failed.
+# A game that starts and stays running overrides every heuristic.
+function Is-Issue($f) {
+    if (@('CONFIRMED', 'HIGH', 'MEDIUM') -notcontains $f.Confidence) { return $false }
+    if ($f.Kind -eq 'PROOF') { return $true }
+    $ls = Get-LaunchState
+    return (($ls -eq 'FAIL') -or ($ls -eq 'FAIL_UNKNOWN'))
+}
 
 function Issues { return @($script:Findings | Where-Object { Is-Issue $_ }) }
+
+function Get-AcfData {
+    $g = $script:G
+    if ((-not $g) -or (-not $g.Acf)) { return $null }
+    try { return (Parse-Acf $g.Acf) } catch { return $null }
+}
 
 function Get-SteamPath {
     foreach ($k in @('HKCU:\Software\Valve\Steam', 'HKLM:\SOFTWARE\WOW6432Node\Valve\Steam', 'HKLM:\SOFTWARE\Valve\Steam')) {
@@ -3983,7 +4111,7 @@ function Check-Files {
     if ($canVerify) { $rid = 'steamverify'; $rec = 'Let Steam verify and repair the game files.' }
 
     if ($g.ExpectedExe -and -not (Test-Path -LiteralPath $g.ExpectedExe)) {
-        Add-Finding 'Game Files' 'Game executable missing' @('Expected executable does not exist: ' + $g.ExpectedExe, 'Expected path comes from the launcher manifest.') 'CONFIRMED' $rec $rid $g.AppId
+        Add-Finding 'Game Files' 'Game executable missing' @('Expected executable does not exist: ' + $g.ExpectedExe, 'Expected path comes from the launcher manifest.') 'CONFIRMED' $rec $rid $g.AppId -Kind 'PROOF'
         $any = $true
     }
     if ($g.Exe -and (Test-Path -LiteralPath $g.Exe)) {
@@ -3994,9 +4122,9 @@ function Check-Files {
             $buf = New-Object byte[] 2
             $n = $fs.Read($buf, 0, 2)
             if ($fi.Length -eq 0) {
-                Add-Finding 'Game Files' 'Game executable is empty' @('The executable has a size of 0 bytes: ' + $g.Exe) 'CONFIRMED' $rec $rid $g.AppId; $any = $true
+                Add-Finding 'Game Files' 'Game executable is empty' @('The executable has a size of 0 bytes: ' + $g.Exe) 'CONFIRMED' $rec $rid $g.AppId -Kind 'PROOF'; $any = $true
             } elseif (($n -eq 2) -and (($buf[0] -ne 0x4D) -or ($buf[1] -ne 0x5A))) {
-                Add-Finding 'Game Files' 'Game executable is not a valid program file' @('The file does not start with a valid executable header: ' + $g.Exe) 'CONFIRMED' $rec $rid $g.AppId; $any = $true
+                Add-Finding 'Game Files' 'Game executable is not a valid program file' @('The file does not start with a valid executable header: ' + $g.Exe) 'CONFIRMED' $rec $rid $g.AppId -Kind 'PROOF'; $any = $true
             }
         } catch [UnauthorizedAccessException] { }
         catch {
@@ -4008,7 +4136,7 @@ function Check-Files {
         $miss = @()
         foreach ($rel in $KnownRequired[$g.AppId]) { if (-not (Test-Path -LiteralPath (Join-Path $g.Root $rel))) { $miss += $rel } }
         if ($miss.Count -gt 0) {
-            Add-Finding 'Game Files' 'Known required game file missing' @($miss | ForEach-Object { 'Missing: ' + $_ }) 'CONFIRMED' $rec $rid $g.AppId; $any = $true
+            Add-Finding 'Game Files' 'Known required game file missing' @($miss | ForEach-Object { 'Missing: ' + $_ }) 'CONFIRMED' $rec $rid $g.AppId -Kind 'PROOF'; $any = $true
         }
     }
     # walk the files
@@ -4052,17 +4180,29 @@ function Check-Files {
         if ($unread.Count -gt 5) { $ev += ('...and ' + ($unread.Count - 5) + ' more') }
         $cf = 'MEDIUM'
         $rc = $rec
-        if ($unreadHard) { $cf = 'HIGH'; $rc = $rec + ' Read errors can also point to a failing drive.' }
-        Add-Finding 'Game Files' 'Game files that cannot be read' $ev $cf $rc $rid $g.AppId; $any = $true
+        $kd = 'SUSPECT'
+        # a CRC / device / data error is reported by Windows itself, that is proof
+        if ($unreadHard) { $cf = 'HIGH'; $kd = 'PROOF'; $rc = $rec + ' Read errors can also point to a failing drive.' }
+        Add-Finding 'Game Files' 'Game files that cannot be read' $ev $cf $rc $rid $g.AppId -Kind $kd; $any = $true
     }
-    # launcher-provided integrity information (Steam)
+    # launcher-provided integrity information (Steam). These flags are written by Steam itself.
     if ($g.Acf) {
         try {
             $d = Parse-Acf $g.Acf
             if ($d.ContainsKey('StateFlags')) {
                 $fl = [int]$d['StateFlags']
-                if (($fl -band 4) -eq 0) {
-                    Add-Finding 'Game Files' 'Steam reports the game is not fully installed' @('Steam StateFlags = ' + $fl + ' (the "fully installed" bit is not set).', 'Source: ' + $g.Acf) 'MEDIUM' 'Let Steam finish installing / updating, or verify the files.' $rid $g.AppId; $any = $true
+                $working = 256 -bor 1024 -bor 65536 -bor 131072 -bor 262144 -bor 524288 -bor 1048576
+                if (($fl -band (32 -bor 128)) -ne 0) {
+                    $why = @()
+                    if (($fl -band 32) -ne 0) { $why += 'FilesMissing' }
+                    if (($fl -band 128) -ne 0) { $why += 'FilesCorrupt' }
+                    Add-Finding 'Game Files' 'Steam itself reports damaged or missing game files' @('Steam StateFlags = ' + $fl + ' (' + ($why -join ' + ') + ').', 'Source: ' + $g.Acf) 'CONFIRMED' $rec $rid $g.AppId -Kind 'PROOF'; $any = $true
+                } elseif (($fl -band 4) -eq 0) {
+                    if (($fl -band $working) -ne 0) {
+                        Add-Finding 'Game Files' 'Steam is installing, updating or verifying this game right now' @('Steam StateFlags = ' + $fl + '.') 'INFORMATIONAL' 'Wait for Steam to finish, then test again.'
+                    } else {
+                        Add-Finding 'Game Files' 'Steam reports the game is not fully installed' @('Steam StateFlags = ' + $fl + ' (the "fully installed" bit is not set).', 'Source: ' + $g.Acf) 'MEDIUM' 'Let Steam finish installing / updating, or verify the game files.' $rid $g.AppId
+                    }
                 } elseif (($fl -band 2) -ne 0) {
                     Add-Finding 'Game Files' 'Steam reports a pending update' @('Steam StateFlags = ' + $fl + ' (update required bit is set).') 'INFORMATIONAL' 'Let Steam finish the update.'
                 }
@@ -4071,7 +4211,10 @@ function Check-Files {
     }
     if ($any) { $script:Sec['Game Files'] = '[!] Problem detected - see Detected Issues' }
     else { $script:Sec['Game Files'] = $TICK + ' No obvious problems detected (' + $all.Count + ' files examined' + $limitTxt + ')' }
-    $script:Sec['Integrity'] = 'Not independently verified'
+    if (-not ([string]$script:Sec['Integrity']).StartsWith('Verified')) {
+        if (($g.Launcher -eq 'Steam') -and $g.AppId) { $script:Sec['Integrity'] = 'Not compared with Steam records (only Steam verification does that)' }
+        else { $script:Sec['Integrity'] = 'Not verified (no launcher record to compare with)' }
+    }
 }
 
 # --------------------------------------------------------- configuration
@@ -4104,30 +4247,81 @@ function Find-ConfigDirs($g) {
 }
 
 # returns $null when the file looks fine, otherwise @{Reason=..; Confidence=..}
+# Walks a JSON-like text outside of strings: drops // and /* */ comments and reports the bracket depth.
+# Depth <> 0 or an unterminated string means the file is truncated or damaged.
+function Get-JsonShape([string]$s) {
+    $sb = New-Object System.Text.StringBuilder
+    $depth = 0; $inStr = $false; $esc = $false; $i = 0; $n = $s.Length
+    while ($i -lt $n) {
+        $ch = $s[$i]
+        if ($inStr) {
+            [void]$sb.Append($ch)
+            if ($esc) { $esc = $false } elseif ($ch -eq '\') { $esc = $true } elseif ($ch -eq '"') { $inStr = $false }
+            $i++; continue
+        }
+        if ($ch -eq '"') { $inStr = $true; [void]$sb.Append($ch); $i++; continue }
+        if (($ch -eq '/') -and ($i + 1 -lt $n) -and ($s[$i + 1] -eq '/')) { while (($i -lt $n) -and ($s[$i] -ne "`n")) { $i++ }; continue }
+        if (($ch -eq '/') -and ($i + 1 -lt $n) -and ($s[$i + 1] -eq '*')) {
+            $i += 2
+            while (($i + 1 -lt $n) -and (-not (($s[$i] -eq '*') -and ($s[$i + 1] -eq '/')))) { $i++ }
+            $i += 2; continue
+        }
+        if (($ch -eq '{') -or ($ch -eq '[')) { $depth++ } elseif (($ch -eq '}') -or ($ch -eq ']')) { $depth-- }
+        [void]$sb.Append($ch); $i++
+    }
+    return @{ Depth = $depth; InString = $inStr; Clean = $sb.ToString() }
+}
+
+# Returns $null when the file looks fine OR when Game Doctor cannot judge it.
+# Only real damage is reported: empty, zero-filled, NUL bytes in a text format, truncated, or malformed XML.
+# Comments, trailing commas, JSON5 and XML fragments are valid for many games and are NOT reported.
 function Test-ConfigFile([IO.FileInfo]$f) {
     $ext = $f.Extension.ToLower()
     if ($f.Length -gt 8MB) { return $null }
     $bytes = [IO.File]::ReadAllBytes($f.FullName)
+    $bom16 = ($bytes.Length -ge 2) -and ((($bytes[0] -eq 0xFF) -and ($bytes[1] -eq 0xFE)) -or (($bytes[0] -eq 0xFE) -and ($bytes[1] -eq 0xFF)))
+    $hasNul = $false
+    if (-not $bom16) { $hasNul = ([Array]::IndexOf($bytes, [byte]0) -ge 0) }
     if ($ext -eq '.json') {
         if ($bytes.Length -eq 0) { return @{ Reason = 'JSON file is empty'; Confidence = 'MEDIUM' } }
-        $txt = [Text.Encoding]::UTF8.GetString($bytes).TrimStart([char]0xFEFF)
-        try { [void]($txt | ConvertFrom-Json -ErrorAction Stop) } catch { return @{ Reason = 'invalid JSON data'; Confidence = 'MEDIUM' } }
+        if ($hasNul) { return @{ Reason = 'JSON file contains binary NUL bytes'; Confidence = 'MEDIUM' } }
+        $enc = [Text.Encoding]::UTF8
+        if ($bom16) { if ($bytes[0] -eq 0xFF) { $enc = [Text.Encoding]::Unicode } else { $enc = [Text.Encoding]::BigEndianUnicode } }
+        $txt = $enc.GetString($bytes).TrimStart([char]0xFEFF)
+        try { [void]($txt | ConvertFrom-Json -ErrorAction Stop); return $null } catch { }
+        $shape = Get-JsonShape $txt
+        if (($shape.Depth -ne 0) -or $shape.InString) { return @{ Reason = 'JSON file is cut off or damaged (unbalanced brackets)'; Confidence = 'MEDIUM' } }
         return $null
     }
     if ($ext -eq '.xml') {
         if ($bytes.Length -eq 0) { return @{ Reason = 'XML file is empty'; Confidence = 'MEDIUM' } }
-        try { $x = New-Object System.Xml.XmlDocument; $x.XmlResolver = $null; $x.Load($f.FullName) } catch { return @{ Reason = 'invalid XML data'; Confidence = 'HIGH' } }
-        return $null
+        if ($hasNul) { return @{ Reason = 'XML file contains binary NUL bytes'; Confidence = 'MEDIUM' } }
+        $st = New-Object System.Xml.XmlReaderSettings
+        $st.DtdProcessing = [System.Xml.DtdProcessing]::Ignore
+        $st.XmlResolver = $null
+        $rd = $null
+        try {
+            $rd = [System.Xml.XmlReader]::Create($f.FullName, $st)
+            $x = New-Object System.Xml.XmlDocument; $x.XmlResolver = $null
+            $x.Load($rd)
+            return $null
+        } catch { } finally { if ($rd) { $rd.Close() } }
+        # several root elements are allowed by many games - try again inside a wrapper
+        try {
+            $raw = [Text.Encoding]::UTF8.GetString($bytes).TrimStart([char]0xFEFF)
+            $raw = [regex]::Replace($raw, '<\?xml[^>]*\?>', '')
+            $raw = [regex]::Replace($raw, '<!DOCTYPE[^>\[]*(\[[^\]]*\])?\s*>', '')
+            $x2 = New-Object System.Xml.XmlDocument; $x2.XmlResolver = $null
+            $x2.LoadXml('<gdroot>' + $raw + '</gdroot>')
+            return $null
+        } catch { return @{ Reason = 'malformed XML data'; Confidence = 'MEDIUM' } }
     }
     # ini / cfg / conf
     if ($bytes.Length -eq 0) { return $null }
-    $bom16 = ($bytes.Length -ge 2) -and ((($bytes[0] -eq 0xFF) -and ($bytes[1] -eq 0xFE)) -or (($bytes[0] -eq 0xFE) -and ($bytes[1] -eq 0xFF)))
     $nz = 0
     foreach ($b in $bytes) { if ($b -ne 0) { $nz++; break } }
     if ($nz -eq 0) { return @{ Reason = 'file is filled with zero bytes'; Confidence = 'HIGH' } }
-    if (-not $bom16) {
-        foreach ($b in $bytes) { if ($b -eq 0) { return @{ Reason = 'text configuration contains binary NUL bytes'; Confidence = 'MEDIUM' } } }
-    }
+    if (($ext -eq '.ini') -and $hasNul) { return @{ Reason = 'text configuration contains binary NUL bytes'; Confidence = 'MEDIUM' } }
     return $null
 }
 
@@ -4366,6 +4560,18 @@ function Get-SteamLaunchErrors([string]$AppId, [datetime]$Since) {
     return @($out | Select-Object -First 5)
 }
 
+# The toolkit runs as administrator, but a player starts a game with normal rights. Some games
+# (FiveM, for example) refuse to run elevated, so the test must start the game like a double-click would.
+function Test-Admin {
+    try { return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } catch { return $false }
+}
+
+# Starts a file or a launcher link through the normal (non-elevated) Windows shell when we are elevated.
+function Start-AsNormalUser([string]$Target) {
+    if (Test-Admin) { Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + $Target + '"') -ErrorAction Stop }
+    else { Start-Process -FilePath $Target -ErrorAction Stop }
+}
+
 function Resolve-LaunchMethod($g) {
     $m = @{ Kind = 'manual'; Label = 'Manual start (monitor only)'; Uri = ''; Exe = ''; Why = '' }
     if ($g.Launcher -eq 'Steam') {
@@ -4412,7 +4618,11 @@ function Invoke-LaunchAttempt([int]$Number) {
             if ($sr.Count -eq 0) { $r.Notes += 'Steam was not running before the launch request.' }
         }
         try {
-            if ($m.Kind -eq 'uri') { Start-Process -FilePath $m.Uri -ErrorAction Stop }
+            if (Test-Admin) {
+                # processes are found afterwards by their install folder, so no handle from Start-Process is needed
+                if ($m.Kind -eq 'uri') { Start-AsNormalUser $m.Uri } else { Start-AsNormalUser $m.Exe }
+                $r.Notes += 'The game was started with normal user rights (not as administrator), exactly like a double-click. Some games refuse to run as administrator.'
+            } elseif ($m.Kind -eq 'uri') { Start-Process -FilePath $m.Uri -ErrorAction Stop }
             else {
                 $po = Start-Process -FilePath $m.Exe -WorkingDirectory (Split-Path $m.Exe -Parent) -PassThru -ErrorAction Stop
                 if ($po) { try { [void]$po.Handle } catch { }; $seen[[int]$po.Id] = $po }
@@ -4520,6 +4730,7 @@ function Run-LaunchTest {
     if ($m.Why) { Line ('  Note          : ' + $m.Why) 'Yellow' }
     Line ''
     Line '  This will START the game. Save your work in other apps first.' 'Yellow'
+    Line '  The launch is the real test: it decides whether anything Game Doctor found actually matters.' 'Gray'
     if (-not (Ask-YN '  Start the launch test now?')) { Line '  Launch test skipped. Nothing was started.' 'Gray'; $script:Sec['Launch Test'] = 'NOT_TESTED (skipped by the user)'; return }
     $n = 0
     while ($n -lt $MaxAttempts) {
@@ -4532,6 +4743,13 @@ function Run-LaunchTest {
         Log ('Launch attempt ' + $n + ' = ' + $r.State)
         if (($r.State -eq 'RUNNING') -or ($r.State -eq 'RUNNING_NO_WINDOW') -or ($r.State -eq 'EXITED_NORMALLY')) { break }
         if ($n -ge $MaxAttempts) { break }
+        # Steam was already running and still created no game process: a second identical try tells nothing new
+        if (($r.State -eq 'TIMEOUT') -and ($g.Launcher -eq 'Steam') -and (@($r.Notes | Where-Object { $_ -match 'was not running' }).Count -eq 0)) {
+            Line ''
+            Line '  Steam was already running and did not start the game, so repeating the test would show nothing new.' 'Yellow'
+            Line '  Moving on to the diagnosis.' 'Gray'
+            break
+        }
         Line ''
         Line '  One failed attempt is not proof that the game is broken.' 'Yellow'
         if (-not (Ask-YN '  Retry the launch test?')) { break }
@@ -4548,118 +4766,213 @@ function Run-LaunchTest {
     }
 }
 
+# Plain-language meaning of a crash. These are the usual causes, never a proof of one single cause.
+function Explain-Crash([string]$Code, [string]$Module, [string]$GameExe, $ModNames) {
+    $out = @()
+    $c = ([string]$Code).ToLower().Replace('0x', '')
+    if (($c.Length -gt 0) -and ($c.Length -lt 8)) { $c = $c.PadLeft(8, '0') }
+    $m = ([string]$Module).ToLower()
+    switch ($c) {
+        'c0000005' { $out += 'Access violation (the program touched memory it must not). Usual causes: a bug in the game, a mod or overlay, an unstable overclock, or a faulty driver. The code alone does not say which.' }
+        'c0000135' { $out += 'A required DLL was not found when the program started. Usually a missing runtime (Visual C++, DirectX) or damaged game files.' }
+        'c000007b' { $out += 'A DLL could not be loaded (32-bit / 64-bit mismatch or a damaged DLL). Usually a missing runtime - install both the x86 and x64 Visual C++ Redistributables.' }
+        'c0000142' { $out += 'A DLL failed to initialize. Often a runtime problem or software that injects into the game.' }
+        'c0000409' { $out += 'A built-in safety check detected memory corruption (fast-fail). Often a game bug, a mod, or a conflicting overlay or anti-cheat.' }
+        'c0000374' { $out += 'Heap corruption. Often a game bug, a mod, or unstable memory (RAM overclock / XMP).' }
+        'c00000fd' { $out += 'Stack overflow. Almost always a bug in the game or in a mod.' }
+        'c000001d' { $out += 'Illegal CPU instruction. The game used an instruction this CPU does not support, or the CPU is unstable (overclock).' }
+        'e0434352' { $out += '.NET exception. The .NET Runtime entry in Windows Event Viewer has the real error. Often a missing .NET runtime or a broken mod.' }
+        '887a0005' { $out += 'The graphics device was removed (GPU driver crash, overheating or unstable overclock).' }
+        '887a0006' { $out += 'The graphics device stopped responding (GPU driver crash, overheating or unstable overclock).' }
+        '887a0007' { $out += 'The graphics device was reset (GPU driver problem).' }
+    }
+    if ($m -match '^(nvwgf2um|nvlddmkm|nvoglv|nvd3dum|nvapi)') { $out += 'The crash happened inside the NVIDIA graphics driver. Update or clean-install the driver (Gaming Fixes, option 8). If it keeps happening, check the GPU temperature and any overclock.' }
+    elseif ($m -match '^(atidxx|atiumd|amdxx|amdvlk|amdkmdag|atio6axx|aticfx)') { $out += 'The crash happened inside the AMD graphics driver. Update or clean-install the driver (Gaming Fixes, option 8). If it keeps happening, check the GPU temperature and any overclock.' }
+    elseif ($m -match '^(igd|ig9|igxel|igc|igdumd)') { $out += 'The crash happened inside the Intel graphics driver. Update the driver from Intel or your PC maker.' }
+    elseif ($m -match '^(d3d\d+|dxgi|d3dcompiler|d3d12core)') { $out += 'The crash happened inside a DirectX component, which usually points to the graphics driver or the GPU rather than to missing game files.' }
+    elseif ($m -match '(easyanticheat|^eac|beclient|battleye|^vgk|equ8)') { $out += 'The crash happened inside an anti-cheat module. Restart the anti-cheat service or reinstall it through the game launcher.' }
+    elseif ($m -match '^(vcruntime|msvcp|msvcr|ucrtbase)') { $out += 'The crash was raised through the C/C++ runtime, which usually means the game stopped itself after an internal error.' }
+    elseif (($ModNames) -and (@($ModNames) -contains $m)) { $out += 'The crash happened inside a file that looks like a mod / injector. Test without it.' }
+    elseif ($GameExe -and ($m -eq $GameExe.ToLower())) { $out += 'The crash happened in the game''s own code.' }
+    elseif (@('ntdll.dll', 'kernelbase.dll', 'kernel32.dll', 'unknown') -contains $m) { $out += 'The faulting module is a Windows core library, where many different failures are reported. It does not point to a specific cause.' }
+    return @($out | Select-Object -Unique)
+}
+
 function Build-LaunchFindings {
     Clear-Findings 'Launch'
     Clear-Findings 'Mods'
     $g = $script:G
     $att = @($script:Attempts)
     if ($att.Count -eq 0) { return }
+    $modNames = @($g.Mods | ForEach-Object { (Split-Path $_ -Leaf).ToLower() })
+    $gameExe = ''
+    if ($g.Exe) { $gameExe = (Split-Path $g.Exe -Leaf) }
     $ok = @($att | Where-Object { ($_.State -eq 'RUNNING') -or ($_.State -eq 'RUNNING_NO_WINDOW') -or ($_.State -eq 'EXITED_NORMALLY') })
     $bad = @($att | Where-Object { $ok -notcontains $_ })
     if (($ok.Count -gt 0) -and ($bad.Count -gt 0)) {
-        Add-Finding 'Launch' 'Inconsistent launch behavior' @($att | ForEach-Object { 'Attempt ' + $_.Attempt + ': ' + $_.State }) 'MEDIUM' 'No automatic repair is recommended. Check the crash evidence below, if any.'
+        # the game did start at least once: informational only, never reported as a problem
+        Add-Finding 'Launch' 'Not every launch attempt succeeded' @($att | ForEach-Object { 'Attempt ' + $_.Attempt + ': ' + $_.State }) 'LOW' 'The game does start. A first failed attempt is often just the launcher starting up. If it keeps happening, look at the crash evidence, if any.'
     } elseif ($bad.Count -gt 0) {
         $l = $bad[$bad.Count - 1]
         if ($l.State -eq 'CRASHED') {
             $ev = @()
-            foreach ($e in $l.Events) { $ev += ('Windows Application Error: ' + $e.App + ' | exception ' + $e.Code + ' | faulting module ' + $e.Module) }
-            foreach ($c in @($l.ExitCodes | Where-Object { $_ -ge 3221225472 })) { $ev += ('Process exit code is an exception status: 0x{0:X8}' -f $c) }
+            foreach ($e in $l.Events) {
+                $ev += ('Windows Application Error: ' + $e.App + ' | exception ' + $e.Code + ' | faulting module ' + $e.Module)
+                foreach ($mm in @(Explain-Crash $e.Code $e.Module $gameExe $modNames)) { $ev += ('Meaning: ' + $mm) }
+            }
+            foreach ($c in @($l.ExitCodes | Where-Object { $_ -ge 3221225472 })) {
+                $ev += ('Process exit code is an exception status: 0x{0:X8}' -f $c)
+                if (@($l.Events).Count -eq 0) { foreach ($mm in @(Explain-Crash ('{0:X8}' -f $c) '' $gameExe $modNames)) { $ev += ('Meaning: ' + $mm) } }
+            }
             foreach ($f in $l.Files) { $ev += ('Crash file created during the test: ' + $f) }
-            Add-Finding 'Launch' 'Confirmed launch crash' $ev 'CONFIRMED' 'Check the evidence above. No game-file repair is recommended unless a file problem is also detected.'
+            Add-Finding 'Launch' 'The game crashed during the launch test' $ev 'CONFIRMED' 'The exception code and the faulting module above are the evidence. Game Doctor does not guess beyond them.' '' $null -Kind 'PROOF'
         } elseif ($l.State -eq 'BLOCKED_BY_LAUNCHER') {
-            Add-Finding 'Launch' 'Launch blocked by the launcher' (@('Launch request was sent, but no game process was created.') + @($l.LauncherErrors)) 'MEDIUM' 'Resolve the message shown by the launcher, then run the test again.'
+            Add-Finding 'Launch' 'The launcher did not let the game start' (@('The launch request was sent, but no game process was created.') + @($l.LauncherErrors)) 'MEDIUM' 'Resolve the message shown by the launcher, then run the test again.' '' $null -Kind 'PROOF'
         } elseif ($l.State -eq 'LAUNCH_FAILED') {
-            Add-Finding 'Launch' 'Windows could not start the game' @($l.Notes) 'CONFIRMED' 'Resolve the Windows error above.'
+            Add-Finding 'Launch' 'Windows could not start the game' @($l.Notes) 'CONFIRMED' 'Resolve the Windows error above.' '' $null -Kind 'PROOF'
         }
-        # EXITED_WITH_ERROR / TIMEOUT / UNKNOWN: no evidence of a cause - reported as UNKNOWN, never invented
+        # EXITED_WITH_ERROR / TIMEOUT / UNKNOWN: there is no evidence of a cause - reported as "not proven", never invented
     }
-    # mod correlation
-    $modNames = @($g.Mods | ForEach-Object { (Split-Path $_ -Leaf).ToLower() })
+    # mod correlation (crash inside a detected third-party module during THIS test)
     foreach ($a in $att) {
         foreach ($e in $a.Events) {
             if ($modNames -contains $e.Module.ToLower()) {
-                Add-Finding 'Mods' 'Possible mod-related crash' @('Crash occurred inside detected third-party module: ' + $e.Module) 'MEDIUM' 'Test without that file. Game Doctor never removes mods automatically.'
+                Add-Finding 'Mods' 'The crash happened inside a mod / injector file' @('Faulting module: ' + $e.Module) 'MEDIUM' 'Test without that file. Game Doctor never removes mods automatically.' '' $null -Kind 'PROOF'
             }
         }
     }
 }
 
+function Get-TdrCount([datetime]$Since) {
+    try { return @(Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Display'; Id = 4101; StartTime = $Since } -ErrorAction Stop).Count } catch { return 0 }
+}
+
+# Past events are history. They are shown, but they are never counted as a current problem.
 function Check-CrashHistory {
     $g = $script:G
     Clear-Findings 'CrashHistory'
     $names = @()
     if ($g.Exe) { $names += (Split-Path $g.Exe -Leaf).ToLower() }
     foreach ($a in $script:Attempts) { foreach ($n in $a.ExeNames) { if ($names -notcontains $n) { $names += $n } } }
-    $ev = @(Get-CrashEvents $names (Get-Date).AddDays(-7) $g.Root)
+    $since = (Get-Date).AddDays(-7)
+    $ev = @(Get-CrashEvents $names $since $g.Root)
     $script:CrashInfo = $ev
     $launchCrash = @($script:Attempts | Where-Object { $_.State -eq 'CRASHED' })
+    $modNames = @($g.Mods | ForEach-Object { (Split-Path $_ -Leaf).ToLower() })
+    $gameExe = ''
+    if ($g.Exe) { $gameExe = (Split-Path $g.Exe -Leaf) }
     if ($launchCrash.Count -gt 0) { $script:Sec['Crash Evidence'] = '[!] CRASH DETECTED during the launch test' }
     elseif ($ev.Count -gt 0) {
-        $codes = (($ev | Group-Object -Property Code | Sort-Object Count -Descending | Select-Object -First 3 | ForEach-Object { $_.Name + ' x' + $_.Count }) -join ', ')
-        $script:Sec['Crash Evidence'] = 'None during the launch test. Informational: ' + $ev.Count + ' Windows Application Error event(s) for this game in the last 7 days (' + $codes + ')'
-        $modNames = @($g.Mods | ForEach-Object { (Split-Path $_ -Leaf).ToLower() })
+        $script:Sec['Crash Evidence'] = 'None during the launch test. History: ' + $ev.Count + ' Windows crash event(s) for this game in the last 7 days.'
+        $lines = @()
+        foreach ($grp in @($ev | Group-Object -Property { $_.Module + '|' + $_.Code } | Sort-Object Count -Descending | Select-Object -First 3)) {
+            $first = $grp.Group[0]
+            $lines += ('Faulting module ' + $first.Module + ', exception ' + $first.Code + ', ' + $grp.Count + ' time(s), last on ' + (($grp.Group | Sort-Object Time -Descending | Select-Object -First 1).Time.ToString('yyyy-MM-dd HH:mm', [cultureinfo]::InvariantCulture)))
+            foreach ($mm in @(Explain-Crash $first.Code $first.Module $gameExe $modNames)) { $lines += ('Meaning: ' + $mm) }
+        }
+        Add-Finding 'CrashHistory' ('Windows recorded ' + $ev.Count + ' crash(es) of this game in the last 7 days') $lines 'LOW' 'These happened outside the launch test, so Game Doctor cannot reproduce them. If they continue, the Meaning lines show where to look.'
         foreach ($e in $ev) {
             if ($modNames -contains $e.Module.ToLower()) {
-                Add-Finding 'Mods' 'Possible mod-related crash (history)' @('Crash on ' + $e.Time + ' occurred inside detected third-party module: ' + $e.Module) 'MEDIUM' 'Test without that file. Game Doctor never removes mods automatically.'
+                Add-Finding 'Mods' 'A past crash happened inside a mod / injector file' @('Crash on ' + $e.Time + ' occurred inside: ' + $e.Module) 'LOW' 'Test without that file. Game Doctor never removes mods automatically.'
                 break
             }
         }
-    } else { $script:Sec['Crash Evidence'] = $TICK + ' None detected' }
+    } else { $script:Sec['Crash Evidence'] = $TICK + ' No crash of this game recorded by Windows in the last 7 days' }
+    $tdr = Get-TdrCount $since
+    if ($tdr -gt 0) {
+        Add-Finding 'CrashHistory' ('Windows reset the display driver ' + $tdr + ' time(s) in the last 7 days') @('This is system-wide, not necessarily caused by this game.') 'LOW' 'Repeated display driver resets point to the graphics driver, temperature or an overclock. See Gaming Fixes, option 8.'
+    }
 }
 
 # ------------------------------------------------------------- diagnosis
 function Get-Overall {
     $iss = @(Issues)
-    $att = @($script:Attempts)
-    $launchState = 'NOT_TESTED'
-    if ($att.Count -gt 0) { $launchState = $att[$att.Count - 1].State }
-    if ($iss.Count -gt 0) { return @{ Kind = 'issue'; Text = '[!] ISSUE DETECTED (' + $iss.Count + ')' } }
-    if ($launchState -eq 'RUNNING') { return @{ Kind = 'healthy'; Text = $TICK + ' GAME HEALTHY' } }
-    if ($launchState -eq 'RUNNING_NO_WINDOW') { return @{ Kind = 'healthy2'; Text = $TICK + ' NO PROBLEMS DETECTED - the process is running but no window was detected (it may still be loading)' } }
-    if ($launchState -eq 'NOT_TESTED') { return @{ Kind = 'nolaunch'; Text = $TICK + ' NO PROBLEMS DETECTED - launch test not run' } }
-    return @{ Kind = 'unknown'; Text = '? UNKNOWN - insufficient evidence to determine the cause' }
+    $proof = @($iss | Where-Object { $_.Kind -eq 'PROOF' })
+    $ls = Get-LaunchState
+    if ($proof.Count -gt 0) { return @{ Kind = 'proven'; Text = '[!] PROBLEM CONFIRMED (' + $proof.Count + ')' } }
+    if (($ls -eq 'FAIL') -or ($ls -eq 'FAIL_UNKNOWN')) { return @{ Kind = 'failed'; Text = '[!] THE GAME DID NOT START CORRECTLY - the cause is not proven' } }
+    if ($ls -eq 'PASS') { return @{ Kind = 'pass'; Text = $TICK + ' NO PROBLEM FOUND - the game started and stayed running' } }
+    if ($ls -eq 'PASS_WEAK') { return @{ Kind = 'pass'; Text = $TICK + ' NO PROBLEM FOUND - the game process is running (no window was detected, it may still be loading)' } }
+    if ($ls -eq 'INCONCLUSIVE') { return @{ Kind = 'inconclusive'; Text = '? INCONCLUSIVE - the game closed by itself with exit code 0 (a launcher stub or a normal exit)' } }
+    return @{ Kind = 'nottested'; Text = '? NOT TESTED - without the launch test Game Doctor cannot say whether the game works' }
+}
+
+function Get-ScopeLines {
+    $l = @()
+    $l += 'Checked    : launch test, game files are readable and look like programs, configuration files, imported libraries, Windows crash history (7 days).'
+    $v = [string]$script:Sec['Integrity']
+    if ($v.StartsWith('Verified')) { $l += 'Integrity  : ' + $v + '.' }
+    else { $l += 'Not covered: whether every file content matches the original (only the launcher''s own verification can tell), and problems that appear later during gameplay.' }
+    return @($l)
 }
 
 function Show-Result {
     $o = Get-Overall
+    $ls = Get-LaunchState
+    $col = 'Green'
+    if (($o.Kind -eq 'proven') -or ($o.Kind -eq 'failed')) { $col = 'Red' } elseif (($o.Kind -eq 'inconclusive') -or ($o.Kind -eq 'nottested')) { $col = 'Yellow' }
     Line ''
     Line '--------------------------------------------------' 'DarkGray'
     Line 'RESULT' 'White'
     Line ''
-    if ($o.Kind -eq 'healthy') { Line $o.Text 'Green'; Line ''; Line 'No problems detected.' 'Green'; Line ''; Line 'No repair is required.' 'Green' }
-    elseif ($o.Kind -eq 'healthy2') { Line $o.Text 'Green'; Line ''; Line 'No repair is required.' 'Green' }
-    elseif ($o.Kind -eq 'nolaunch') { Line $o.Text 'Green'; Line ''; Line 'No repair is required. Run Test Launch for a complete diagnosis.' 'Gray' }
-    elseif ($o.Kind -eq 'unknown') {
-        Line $o.Text 'Yellow'
-        $last = $script:Attempts[$script:Attempts.Count - 1]
-        Line ('Launch test result: ' + $last.State) 'Yellow'
-        if (@($script:Findings | Where-Object { ($_.Category -eq 'Game Files') -and (Is-Issue $_) }).Count -eq 0) {
-            Line 'Game files and configuration show no evidence of a problem.' 'Gray'
-            Line 'Problem does not appear to be caused by missing game files.' 'Gray'
-            Line 'Further system-level investigation may be required.' 'Gray'
-        }
-    } else {
-        Line $o.Text 'Red'
+    Line $o.Text $col
+    $att = @($script:Attempts)
+    if ($att.Count -gt 0) {
+        $last = $att[$att.Count - 1]
+        Line ('Launch test: ' + $last.State + ' (' + $last.Seconds + ' s, ' + $att.Count + ' attempt(s))') 'Gray'
+    }
+    $iss = @(Issues)
+    if ($o.Kind -eq 'proven') {
+        $proof = @($iss | Where-Object { $_.Kind -eq 'PROOF' })
         $i = 0
-        foreach ($f in @(Issues)) {
+        foreach ($f in $proof) {
             $i++
             Line ''
             Line ('  ' + $i + '. ' + $f.Title + '   [' + $f.Category + ']') 'Red'
-            foreach ($e in $f.Evidence) { Line ('     Evidence : ' + $e) 'Gray' }
-            Line ('     Confidence: ' + $f.Confidence + ' (' + $f.Status + ')') 'Gray'
+            foreach ($e in $f.Evidence) { if ($e.StartsWith('Meaning: ')) { Line ('     ' + $e) 'Yellow' } else { Line ('     Evidence : ' + $e) 'Gray' } }
             if ($f.Recommended) { Line ('     Recommended: ' + $f.Recommended) 'Yellow' }
         }
-        $launchBad = @($script:Attempts | Where-Object { @('CRASHED', 'BLOCKED_BY_LAUNCHER', 'LAUNCH_FAILED') -contains $_.State }).Count -gt 0
-        $fileIssue = @($script:Findings | Where-Object { (@('Game Files', 'Configuration', 'Dependencies') -contains $_.Category) -and (Is-Issue $_) }).Count -gt 0
-        if ($launchBad -and (-not $fileIssue)) {
+        $rest = @($iss | Where-Object { $_.Kind -ne 'PROOF' })
+        if ($rest.Count -gt 0) {
             Line ''
-            Line '  Game files, configuration and dependencies show no evidence of a problem.' 'Gray'
-            Line '  Problem does not appear to be caused by missing game files.' 'Gray'
-            Line '  Further system-level investigation may be required.' 'Gray'
+            Line '  Also found while the game was failing (possible related causes, not proof by themselves):' 'Yellow'
+            foreach ($f in $rest) { Line ('   - ' + $f.Title); foreach ($e in $f.Evidence) { Line ('       ' + $e) 'DarkGray' } }
+        }
+        if (($ls -eq 'PASS') -or ($ls -eq 'PASS_WEAK')) { Line ''; Line '  The game does start, but the problem above is real and was reported by the system or the launcher.' 'Gray' }
+    } elseif ($o.Kind -eq 'failed') {
+        Line ''
+        Line 'The launch failed, but Game Doctor found no proof of why.' 'Yellow'
+        if ($iss.Count -gt 0) {
+            Line 'Possible causes found (not proven):' 'Yellow'
+            foreach ($f in $iss) { Line ('   - ' + $f.Title + '   [' + $f.Category + ']'); foreach ($e in $f.Evidence) { Line ('       ' + $e) 'DarkGray' } }
+        } else {
+            Line 'Game files, configuration and imported libraries show no evidence of a problem.' 'Gray'
+            Line 'The cause may be outside the game files (graphics driver, Windows, anti-cheat, the launcher).' 'Gray'
+        }
+    } elseif ($o.Kind -eq 'pass') {
+        Line ''
+        Line 'The game launched and kept running. No repair is needed.' 'Green'
+    } elseif ($o.Kind -eq 'inconclusive') {
+        Line ''
+        Line 'The process ended by itself without an error, so the test proves nothing either way.' 'Gray'
+    } else {
+        Line ''
+        Line 'Run the diagnosis again and allow the launch test.' 'Gray'
+    }
+    # everything else is a note: it never counts as a problem
+    $notes = @($script:Findings | Where-Object { -not (Is-Issue $_) })
+    if ($notes.Count -gt 0) {
+        Line ''
+        Line 'Notes (not problems):' 'DarkGray'
+        foreach ($f in $notes) {
+            $tag = ''
+            if ((($ls -eq 'PASS') -or ($ls -eq 'PASS_WEAK')) -and ($f.Kind -eq 'SUSPECT') -and (@('CONFIRMED', 'HIGH', 'MEDIUM') -contains $f.Confidence)) { $tag = ' (ignored: the game starts fine, so this has no visible effect)' }
+            Line ('  - ' + $f.Title + $tag) 'DarkGray'
+            foreach ($e in $f.Evidence) { Line ('      ' + $e) 'DarkGray' }
         }
     }
-    $info = @($script:Findings | Where-Object { -not (Is-Issue $_) })
-    foreach ($f in $info) { Line ''; Line ('  [' + $f.Confidence + '] ' + $f.Title) 'DarkGray'; foreach ($e in $f.Evidence) { Line ('     ' + $e) 'DarkGray' } }
+    Line ''
+    foreach ($s in @(Get-ScopeLines)) { Line $s 'DarkGray' }
 }
 
 function Show-Sections {
@@ -4716,9 +5029,11 @@ function Build-Report {
     $info = @($script:Findings | Where-Object { -not (Is-Issue $_) })
     if ($info.Count -gt 0) {
         [void]$L.Add('')
-        [void]$L.Add('Informational / Possible:')
+        [void]$L.Add('Notes (not problems):')
         foreach ($f in $info) { [void]$L.Add('  - [' + $f.Confidence + '] ' + $f.Title); foreach ($e in $f.Evidence) { [void]$L.Add('      ' + $e) } }
     }
+    [void]$L.Add('')
+    foreach ($s in @(Get-ScopeLines)) { [void]$L.Add($s) }
     [void]$L.Add('')
     [void]$L.Add('Actions Performed:')
     if ($script:Actions.Count -eq 0) { [void]$L.Add('  None') } else { foreach ($a in $script:Actions) { [void]$L.Add('  - ' + $a) } }
@@ -4764,34 +5079,12 @@ function Run-Scan([bool]$withLaunchSteps) {
 function Run-Full {
     $script:Attempts.Clear(); $script:LaunchDone = $false
     Run-Scan $true
-    Step 6 8 'Testing Game Launch...'
+    Step 6 8 'Testing Game Launch (the real test)...'
     Run-LaunchTest
-    Step 7 8 'Checking Crash Evidence...'
+    Step 7 8 'Analyzing Crash Evidence...'
     Build-LaunchFindings
     Check-CrashHistory
     Step 8 8 'Building Diagnosis...'
-    Show-Sections
-    Show-Result
-    Save-Report
-}
-
-function Run-ScanOnly {
-    Run-Scan $false
-    Check-CrashHistory
-    Show-Sections
-    Show-Result
-    Save-Report
-}
-
-function Run-LaunchOnly {
-    if (-not $script:ScanDone) {
-        Line 'Preparing: detecting the game first...' 'Cyan'
-        Do-Detection
-        Detect-Mods
-    }
-    Run-LaunchTest
-    Build-LaunchFindings
-    Check-CrashHistory
     Show-Sections
     Show-Result
     Save-Report
@@ -4843,32 +5136,52 @@ function Repair-Config($f) {
 
 function Repair-SteamVerify($f) {
     $g = $script:G
-    Line '  Steam will verify and repair the files with its own official function.' 'White'
-    Line '  Steam shows the progress in its own window.' 'Gray'
+    Line '  Steam will verify the files with its own official function.' 'White'
+    Line '  It compares every game file with its records and re-downloads only what is damaged or missing.' 'Gray'
+    Line '  Steam shows the progress in its own window. This can take several minutes.' 'Gray'
     if (-not (Ask-YN '  Ask Steam to verify the game files now?')) { Line '  Skipped.' 'Gray'; return }
-    $f0 = Get-AcfFlags
+    $d0 = Get-AcfData
+    $f0 = $null
+    if ($d0 -and $d0.ContainsKey('StateFlags')) { $f0 = [int]$d0['StateFlags'] }
     try { Start-Process -FilePath ('steam://validate/' + $g.AppId) -ErrorAction Stop } catch { Line ('  Could not send the request to Steam: ' + $_.Exception.Message) 'Red'; return }
     [void]$script:Actions.Add('Asked Steam to verify game files (App ID ' + $g.AppId + ').')
     Log ('Steam verify requested for ' + $g.AppId)
     $t0 = Get-Date
     $changed = $false
     $done = $false
+    $touched = $false
     Write-Host '  Waiting for Steam' -NoNewline
     while (((Get-Date) - $t0).TotalMinutes -lt 60) {
-        Start-Sleep -Seconds 5
+        Start-Sleep -Seconds 3
         Write-Host '.' -NoNewline
-        $fl = Get-AcfFlags
-        if ($fl -ne $null) {
+        $d = Get-AcfData
+        if ($d -and $d.ContainsKey('StateFlags')) {
+            $fl = [int]$d['StateFlags']
             if ($fl -ne $f0) { $changed = $true }
+            # Steam asks for an update / downloads only when it found something to replace
+            if (($fl -band (2 -bor 256 -bor 1024 -bor 524288)) -ne 0) { $touched = $true }
+            $bd = 0
+            if ($d.ContainsKey('BytesToDownload')) { try { $bd = [int64]$d['BytesToDownload'] } catch { } }
+            if ($bd -gt 0) { $touched = $true }
             if ($changed -and ($fl -eq 4)) { $done = $true; break }
         }
         if ((-not $changed) -and (((Get-Date) - $t0).TotalSeconds -ge 90)) { break }
     }
     Write-Host ''
-    if ($done) { Line '  Steam finished and reports the game as fully installed.' 'Green' }
-    else {
+    if ($done) {
+        if ($touched) {
+            Line '  Steam found files that needed repair and replaced them.' 'Green'
+            $script:Sec['Integrity'] = 'Verified by Steam - damaged or missing files were repaired'
+            [void]$script:Verify.Add('Steam verification finished: files were repaired.')
+        } else {
+            Line '  Steam verified the game files. Game Doctor did not observe any file being replaced.' 'Green'
+            $script:Sec['Integrity'] = 'Verified by Steam - no file replacement observed'
+            [void]$script:Verify.Add('Steam verification finished: no file replacement observed.')
+        }
+    } else {
         Line '  Game Doctor could not confirm the end of the verification from Steam data.' 'Yellow'
         [void](Read-Host '  When Steam shows that verification is complete, press Enter')
+        [void]$script:Verify.Add('Steam verification was started; the end was confirmed by the user.')
     }
 }
 
@@ -4883,41 +5196,69 @@ function Repair-Dep($f) {
 }
 
 function Run-Repair {
-    $fixable = @(Issues | Where-Object { $_.RepairId })
+    $g = $script:G
+    $ls = Get-LaunchState
     $iss = @(Issues)
-    if ($iss.Count -eq 0) {
-        Line ''
-        Line ($TICK + ' No problems with evidence were found, so no repair is required.') 'Green'
-        return
+    $fixable = @($iss | Where-Object { $_.RepairId })
+    # Elimination step: if a Steam game failed to start, Steam's own verification is the only check
+    # that compares every file, so it rules damaged files in or out.
+    $failed = (($ls -eq 'FAIL') -or ($ls -eq 'FAIL_UNKNOWN'))
+    if ($failed -and ($g.Launcher -eq 'Steam') -and $g.AppId -and (@($fixable | Where-Object { $_.RepairId -eq 'steamverify' }).Count -eq 0)) {
+        $fixable += [pscustomobject]@{ Category = 'Game Files'; Title = 'Rule out damaged game files'
+            Evidence = @('The game did not start correctly and no single cause is proven.', 'Steam compares every file with its own records, which Game Doctor cannot do.')
+            Confidence = 'CHECK'; Status = 'Check'; Recommended = 'Let Steam verify the game files.'; RepairId = 'steamverify'; RepairData = $g.AppId; Kind = 'SUSPECT' }
     }
+    if (($iss.Count -eq 0) -and ($fixable.Count -eq 0)) { return }
     if ($fixable.Count -eq 0) {
         Line ''
-        Line 'The detected issues have no automatic repair:' 'Yellow'
+        Line 'The problem found has no automatic repair:' 'Yellow'
         foreach ($f in $iss) { Line ('  - ' + $f.Title + ' : ' + $f.Recommended) 'Gray' }
         return
     }
+    $beforeState = $ls
+    $beforeAtt = @($script:Attempts)
+    $actionsBefore = $script:Actions.Count
     $done = @{}
     foreach ($f in $fixable) {
-        $key = $f.RepairId + '|' + $f.Category
         Line ''
         Line ('[!] ' + $f.Title.ToUpper()) 'Red'
         foreach ($e in $f.Evidence) { Line ('    Evidence: ' + $e) 'Gray' }
-        Line ('    Confidence: ' + $f.Confidence) 'Gray'
         if ($f.RepairId -eq 'steamverify') { if ($done.ContainsKey('steamverify')) { continue }; $done['steamverify'] = $true; Repair-SteamVerify $f }
         elseif ($f.RepairId -eq 'config') { Repair-Config $f }
         elseif ($f.RepairId -eq 'dep') { Repair-Dep $f }
     }
+    if ($script:Actions.Count -eq $actionsBefore) { Save-Report; return }
+    # a repair that is not re-tested is only a guess: run the same launch test again
     Line ''
-    Line 'Running Game Doctor verification...' 'Cyan'
+    Line 'Re-checking after the repair...' 'Cyan'
     Check-Files
     Check-Config
     Check-Deps
-    $left = @(Issues)
-    if ($left.Count -eq 0) { Line ('[' + $TICK + '] Re-scan completed - no problems with evidence remain.') 'Green'; [void]$script:Verify.Add('Re-scan completed: no issues with evidence remain.') }
-    else {
-        Line ('[!] Re-scan completed - ' + $left.Count + ' issue(s) still have evidence:') 'Yellow'
-        foreach ($f in $left) { Line ('    - ' + $f.Title) 'Yellow' }
-        [void]$script:Verify.Add('Re-scan completed: ' + $left.Count + ' issue(s) still present.')
+    Run-LaunchTest
+    if ($script:Attempts.Count -eq 0) {
+        foreach ($a in $beforeAtt) { [void]$script:Attempts.Add($a) }
+        Line ''
+        Line '  The launch test was skipped, so the result of the repair is NOT confirmed.' 'Yellow'
+        [void]$script:Verify.Add('Repair performed; the result was not confirmed (launch test skipped).')
+    } else {
+        Build-LaunchFindings
+        Check-CrashHistory
+        $afterState = Get-LaunchState
+        $good = @('PASS', 'PASS_WEAK')
+        $bad = @('FAIL', 'FAIL_UNKNOWN')
+        Line ''
+        if (($bad -contains $beforeState) -and ($good -contains $afterState)) {
+            Line ($TICK + ' FIXED - before the repair the game failed to start, now it starts and stays running.') 'Green'
+            [void]$script:Verify.Add('Before: ' + $beforeState + '. After: ' + $afterState + '. Fixed.')
+        } elseif (($bad -contains $beforeState) -and ($bad -contains $afterState)) {
+            Line '[!] NOT FIXED - the game still does not start correctly after the repair.' 'Red'
+            Line '    The repair above did not remove the cause. Look at the new evidence below.' 'Gray'
+            [void]$script:Verify.Add('Before: ' + $beforeState + '. After: ' + $afterState + '. Not fixed.')
+        } else {
+            Line ('Result after the repair: ' + $afterState + ' (before: ' + $beforeState + ').') 'Gray'
+            [void]$script:Verify.Add('Before: ' + $beforeState + '. After: ' + $afterState + '.')
+        }
+        Show-Result
     }
     Save-Report
 }
@@ -4971,12 +5312,12 @@ try {
     Clear-Host
     Show-Banner
     Line 'GAME DOCTOR - evidence-based game diagnostics and repair' 'Yellow'
-    Line 'Give it the game folder. It checks everything by itself and only reports problems it can prove.' 'Gray'
-    Line 'Nothing is changed without your approval, and a backup is made first.' 'Gray'
+    Line 'Give it the game folder. It checks the files, then starts the game for real to see what happens.' 'Gray'
+    Line 'A problem is reported only when there is proof. Nothing is changed without your approval.' 'Gray'
     if (-not (Read-GamePath)) { exit 0 }
     Line ''
     Run-Full
-    if (@(Issues).Count -gt 0) { Run-Repair }
+    Run-Repair
     Pause-Key
 } catch {
     Line ('Unexpected problem: ' + $_.Exception.Message) 'Red'
@@ -4986,3 +5327,645 @@ try {
 }
 exit 0
 #GD_END
+#CL_BEGIN
+# ====================================================================
+#  FixToolkit cleaning engine. Started only by the Cleaning Tools menu.
+#    RADAR   : Space Reclaim Radar. Estimates how much space each cleaning
+#              option can free. Prints only KEY=value lines
+#              (DEEP, THUMB, ORPH, BIN, TOTAL). Never deletes anything.
+#    ORPHANS : Orphaned File Scanner. Interactive, runs in its own window.
+#              Shows folders that probably belong to programs that are no
+#              longer installed. Nothing is removed unless the user picks
+#              it and types DELETE. Removed folders go to the Recycle Bin.
+#  ASCII only on purpose.
+# ====================================================================
+$ErrorActionPreference = 'SilentlyContinue'
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
+try { [Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture } catch { }
+
+$Mode       = $env:FT_CLMODE
+$RadarMode  = $env:FT_RADAR
+$OrphFile   = $env:FT_ORPHFILE
+$LogDir     = $env:FT_LOGDIR
+$ToolkitLog = $env:FT_LOGFILE
+$SelfPath   = $env:FT_SELF
+
+# Fast folder measuring (skips junctions, never stops on access denied)
+if (-not ('FtScan' -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.IO;
+using System.Collections.Generic;
+
+public class FtInfo
+{
+    public long Bytes;
+    public long Newest;
+    public int Files;
+    public int Exe;
+}
+
+public static class FtScan
+{
+    public static FtInfo Measure(string root, long cutoff, string pattern, bool recurse)
+    {
+        FtInfo r = new FtInfo();
+        if (string.IsNullOrEmpty(root)) return r;
+        if (string.IsNullOrEmpty(pattern)) pattern = "*";
+        Stack<string> st = new Stack<string>();
+        st.Push(root);
+        while (st.Count > 0)
+        {
+            string d = st.Pop();
+            DirectoryInfo di;
+            try
+            {
+                di = new DirectoryInfo(d);
+                if (!di.Exists) continue;
+            }
+            catch { continue; }
+            try
+            {
+                foreach (FileInfo f in di.EnumerateFiles(pattern))
+                {
+                    try
+                    {
+                        long t = f.LastWriteTimeUtc.Ticks;
+                        if (cutoff > 0 && t >= cutoff) continue;
+                        r.Bytes += f.Length;
+                        r.Files++;
+                        if (t > r.Newest) r.Newest = t;
+                        string x = f.Extension;
+                        if (x.Equals(".exe", StringComparison.OrdinalIgnoreCase) || x.Equals(".dll", StringComparison.OrdinalIgnoreCase)) r.Exe++;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            if (!recurse) continue;
+            try
+            {
+                foreach (DirectoryInfo s in di.EnumerateDirectories())
+                {
+                    try
+                    {
+                        if ((s.Attributes & FileAttributes.ReparsePoint) != 0) continue;
+                        st.Push(s.FullName);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+        return r;
+    }
+}
+'@
+}
+
+function Fmt([int64]$b) {
+    if ($b -ge 1GB) { return ('{0:0.0} GB' -f ($b / 1GB)) }
+    if ($b -ge 1MB) { return ('{0:0} MB' -f ($b / 1MB)) }
+    if ($b -ge 1KB) { return ('{0:0} KB' -f ($b / 1KB)) }
+    return '0 MB'
+}
+
+function Log([string]$m) {
+    if ($ToolkitLog) {
+        try { Add-Content -LiteralPath $ToolkitLog -Value ('[' + (Get-Date).ToString('yyyy-MM-dd HH:mm:ss', [cultureinfo]::InvariantCulture) + '] ORPHANSCAN - ' + $m) -ErrorAction SilentlyContinue } catch { }
+    }
+}
+
+# ====================================================================
+#  RADAR: how much each option can free (an estimate, nothing is deleted)
+# ====================================================================
+$script:Seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+
+# Size of a whole folder. $Cut > 0 counts only files older than that moment (ticks, UTC).
+function Add-Dir([string]$Path, [int64]$Cut = 0) {
+    if (-not $Path) { return [int64]0 }
+    if (-not $script:Seen.Add($Path.TrimEnd('\'))) { return [int64]0 }
+    $i = [FtScan]::Measure($Path, $Cut, '*', $true)
+    return [int64]$i.Bytes
+}
+
+# Size of the files that match a pattern inside a folder.
+function Add-Pat([string]$Dir, [string]$Pattern, [bool]$Recurse) {
+    if (-not $Dir) { return [int64]0 }
+    if (-not $script:Seen.Add($Dir.TrimEnd('\') + '|' + $Pattern)) { return [int64]0 }
+    $i = [FtScan]::Measure($Dir, 0, $Pattern, $Recurse)
+    return [int64]$i.Bytes
+}
+
+# Cache folders of one Chromium based browser / app (cookies, logins and history are never listed)
+function Get-ChromiumPaths([string]$Root) {
+    $o = @()
+    if ((-not $Root) -or (-not (Test-Path -LiteralPath $Root))) { return $o }
+    $profiles = @($Root)
+    foreach ($d in @(Get-ChildItem -LiteralPath $Root -Directory -Force -ErrorAction SilentlyContinue)) {
+        if (($d.Name -eq 'Default') -or ($d.Name -like 'Profile *')) { $profiles += $d.FullName }
+    }
+    foreach ($p in $profiles) {
+        foreach ($s in @('Cache', 'Code Cache', 'Media Cache', 'Application Cache', 'Service Worker\CacheStorage')) { $o += ($p + '\' + $s) }
+    }
+    $o += ($Root + '\Crashpad\reports')
+    return $o
+}
+
+# Estimate for option 1 (Deep clean). Same folders the Deep clean empties.
+# Disk Cleanup, component cleanup and Windows.old are not counted.
+function Get-DeepBytes {
+    $sum = [int64]0
+    $day = (Get-Date).AddDays(-1).ToUniversalTime().Ticks
+    $sr = $env:SystemRoot
+    $sd = $env:SystemDrive
+    $pd = $env:ProgramData
+    $la = $env:LocalAppData
+    $ra = $env:APPDATA
+    $up = $env:USERPROFILE
+    $pf86 = ${env:ProgramFiles(x86)}
+    $users = @(Get-ChildItem -LiteralPath ($sd + '\Users') -Directory -Force -ErrorAction SilentlyContinue)
+
+    # temp files older than 24 hours
+    $tmp = @(($sr + '\Temp'))
+    # %TEMP% often uses a short 8.3 name of the same folder the user loop below already covers
+    if ($env:TEMP -and ($env:TEMP -notmatch '~\d')) { $tmp += $env:TEMP }
+    foreach ($u in $users) { $tmp += ($u.FullName + '\AppData\Local\Temp') }
+    foreach ($p in $tmp) { $sum += (Add-Dir $p $day) }
+
+    # old Windows logs
+    $sum += (Add-Pat ($sr + '\Logs\CBS') '*.cab' $false)
+    $sum += (Add-Pat ($sr + '\Logs\CBS') 'CbsPersist_*.log' $false)
+    $sum += (Add-Pat ($sr + '\Debug') '*.log' $false)
+    $sum += (Add-Pat ($sr + '\Logs\DISM') '*.log' $false)
+    $sum += (Add-Pat ($sr + '\Logs\MoSetup') '*.log' $true)
+    $sum += (Add-Pat ($pd + '\Microsoft\Windows Defender\Support') '*.log' $true)
+    $sum += (Add-Pat ($sd + '\') '*.chk' $false)
+    foreach ($f in @(Get-ChildItem -LiteralPath ($sd + '\') -Directory -Force -Filter 'FOUND.*' -ErrorAction SilentlyContinue)) { $sum += (Add-Dir $f.FullName) }
+
+    # memory dumps, error reports, crash dumps
+    $sum += (Add-Pat ($sr + '\LiveKernelReports') '*.dmp' $true)
+    $sum += (Add-Pat $sr 'MEMORY.DMP' $false)
+    foreach ($u in $users) { $sum += (Add-Dir ($u.FullName + '\AppData\Local\CrashDumps')) }
+
+    $dirs = @(
+        ($sd + '\PerfLogs'),
+        ($la + '\Microsoft\Windows\INetCache'), ($up + '\AppData\LocalLow\Temp'), ($la + '\Microsoft\Windows\Caches'),
+        ($sr + '\System32\config\systemprofile\AppData\Local\Temp'),
+        ($sr + '\ServiceProfiles\NetworkService\AppData\Local\Temp'), ($sr + '\ServiceProfiles\LocalService\AppData\Local\Temp'),
+        ($sd + '\OneDriveTemp'),
+        ($sr + '\Prefetch'),
+        ($sr + '\SoftwareDistribution\Download'), ($sr + '\SoftwareDistribution\DeliveryOptimization'),
+        ($sr + '\ServiceProfiles\NetworkService\AppData\Local\Microsoft\Windows\DeliveryOptimization\Cache'),
+        ($sr + '\Logs\WindowsUpdate'),
+        ($pd + '\Microsoft\Windows\WER\ReportArchive'), ($pd + '\Microsoft\Windows\WER\ReportQueue'), ($pd + '\Microsoft\Windows\WER\Temp'),
+        ($la + '\Microsoft\Windows\WER'),
+        ($sr + '\Minidump'), ($sr + '\System32\SleepStudy'),
+        ($pd + '\Microsoft\Diagnosis\EventsStore'), ($pd + '\Microsoft\Diagnosis\ETLLogs\AutoLogger'), ($pd + '\Microsoft\Diagnosis\ETLLogs\ShutdownLogger')
+    )
+    foreach ($p in $dirs) { $sum += (Add-Dir $p) }
+
+    # browsers and Chromium based apps
+    $chromium = @(
+        ($la + '\Google\Chrome\User Data'), ($la + '\Microsoft\Edge\User Data'), ($la + '\BraveSoftware\Brave-Browser\User Data'),
+        ($la + '\Opera Software\Opera Stable'), ($ra + '\Opera Software\Opera Stable'),
+        ($la + '\Opera Software\Opera GX Stable'), ($ra + '\Opera Software\Opera GX Stable'),
+        ($la + '\Vivaldi\User Data'), ($la + '\Yandex\YandexBrowser\User Data'), ($la + '\Chromium\User Data'),
+        ($ra + '\discord'), ($ra + '\discordptb'), ($ra + '\discordcanary'),
+        ($ra + '\Microsoft\Teams'), ($ra + '\Slack'), ($ra + '\Code')
+    )
+    foreach ($r in $chromium) { foreach ($p in @(Get-ChromiumPaths $r)) { $sum += (Add-Dir $p) } }
+    foreach ($fr in @(($la + '\Mozilla\Firefox\Profiles'), ($la + '\librewolf\Profiles'), ($la + '\Waterfox\Profiles'))) {
+        foreach ($pr in @(Get-ChildItem -LiteralPath $fr -Directory -ErrorAction SilentlyContinue)) {
+            $sum += (Add-Dir ($pr.FullName + '\cache2'))
+            $sum += (Add-Dir ($pr.FullName + '\OfflineCache'))
+        }
+    }
+    $sum += (Add-Dir ($ra + '\Mozilla\Firefox\Crash Reports'))
+
+    # app caches and logs
+    $steam = $null
+    try { $steam = [string](Get-ItemProperty -LiteralPath 'HKCU:\Software\Valve\Steam' -ErrorAction Stop).SteamPath } catch { }
+    if ($steam) {
+        $steam = $steam.Replace('/', '\')
+        foreach ($s in @('appcache\httpcache', 'logs', 'dumps', 'depotcache')) { $sum += (Add-Dir ($steam + '\' + $s)) }
+    }
+    foreach ($w in @(Get-ChildItem -LiteralPath ($la + '\EpicGamesLauncher\Saved') -Directory -Filter 'webcache*' -ErrorAction SilentlyContinue)) { $sum += (Add-Dir $w.FullName) }
+    $apps = @(
+        ($la + '\Spotify\Data'), ($la + '\Packages\SpotifyAB.SpotifyMusic_zpdnekdrzrea0\LocalCache\Spotify\Data'),
+        ($ra + '\Microsoft\Teams\tmp'), ($ra + '\Telegram Desktop\tdata\user_data\cache'), ($ra + '\Telegram Desktop\tdata\user_data\media_cache'),
+        ($ra + '\Zoom\data\cache'), ($ra + '\Sun\Java\Deployment\cache'),
+        ($ra + '\Adobe\Common\Media Cache Files'), ($ra + '\Adobe\Common\Media Cache'),
+        ($la + '\Packages\Microsoft.WindowsStore_8wekyb3d8bbwe\LocalCache'),
+        ($la + '\Packages\Microsoft.GamingApp_8wekyb3d8bbwe\LocalCache'),
+        ($la + '\Packages\Microsoft.XboxGamingOverlay_8wekyb3d8bbwe\LocalCache'),
+        ($ra + '\Code\CachedData'), ($ra + '\Code\CachedExtensionVSIXs'), ($ra + '\Code\logs'),
+        ($la + '\Microsoft\OneDrive\logs'), ($la + '\Steam\htmlcache'),
+        ($pd + '\Battle.net\Cache'), ($pd + '\Blizzard Entertainment\Battle.net\Cache'), ($la + '\Battle.net\Cache'), ($ra + '\Battle.net\Cache'), ($ra + '\Battle.net\Logs'),
+        ($la + '\Electronic Arts\EA Desktop\Cache'),
+        ($la + '\Ubisoft Game Launcher\cache'), ($pf86 + '\Ubisoft\Ubisoft Game Launcher\cache'), ($la + '\Ubisoft Game Launcher\logs'),
+        ($la + '\EpicGamesLauncher\Saved\Logs'), ($la + '\Riot Games\Riot Client\Logs'), ($la + '\VALORANT\Saved\Logs'),
+        ($pd + '\Origin\Logs'), ($la + '\Rockstar Games\Launcher\Cache'), ($la + '\GOG.com\Galaxy\logs'),
+        ($ra + '\.minecraft\logs'), ($ra + '\.minecraft\crash-reports'),
+        ($sd + '\NVIDIA'), ($sd + '\AMD'), ($sd + '\INTEL'), ($pd + '\NVIDIA Corporation\Downloader')
+    )
+    foreach ($p in $apps) { $sum += (Add-Dir $p) }
+    return $sum
+}
+
+# Estimate for option 2 (icon and thumbnail cache)
+function Get-ThumbBytes {
+    $la = $env:LocalAppData
+    $s = [int64]0
+    $s += (Add-Pat $la 'IconCache.db' $false)
+    $s += (Add-Pat ($la + '\Microsoft\Windows\Explorer') 'iconcache_*.db' $false)
+    $s += (Add-Pat ($la + '\Microsoft\Windows\Explorer') 'thumbcache_*.db' $false)
+    return $s
+}
+
+# Estimate for option 4 (Recycle Bin of the current user on every fixed drive)
+function Get-BinBytes {
+    $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    $s = [int64]0
+    foreach ($d in [IO.DriveInfo]::GetDrives()) {
+        if (($d.DriveType -eq 'Fixed') -and $d.IsReady) {
+            $i = [FtScan]::Measure(($d.Name + '$Recycle.Bin\' + $sid), 0, '*', $true)
+            $s += [int64]$i.Bytes
+        }
+    }
+    return $s
+}
+
+# ====================================================================
+#  ORPHANED FILE SCANNER (detection)
+#  A top-level folder in Program Files, ProgramData or AppData is listed only when ALL of these are true:
+#    - its name is not a protected Windows / driver folder,
+#    - no installed program, service, startup entry, scheduled task or running process points into it,
+#    - its name does not match any installed program or publisher,
+#    - nothing inside it was changed in the last 30 days,
+#    - it holds at least 1 MB.
+#  It is a list of SUSPECTS for the user to review, never a proof.
+# ====================================================================
+$ProtectedRx = '^(microsoft.*|windows.*|\$.*|packages|package cache|temp|tmp|programs|common files|application data|desktop|documents|start menu|templates|crashdumps|d3dscache|connecteddevicesplatform|history|inetcache|publishers|virtualstore|dotnet|reference assemblies|msbuild|iis.*|internet explorer|uninstall information|modifiablewindowsapps|windowsapps|nvidia.*|amd.*|intel.*|realtek.*|qualcomm.*|mediatek.*|broadcom.*|synaptics.*|regid\..*|ssh|usoprivate|usoshared|softwaredistribution|comms|wer|diagnostics|elevateddiagnostics|system volume information|recovery|npm|npm-cache|pip|nuget|\.nuget|yarn|pnpm.*|node-gyp)$'
+
+function Norm([string]$s) {
+    if (-not $s) { return '' }
+    return ($s.ToLowerInvariant() -replace '[^\p{L}\p{Nd}]', '')
+}
+
+# Adds every folder above each path found in $Text to the set (so a folder is "in use" when anything inside it is referenced)
+function Add-PathStrings([string]$Text, $Set) {
+    if (-not $Text) { return }
+    foreach ($m in [regex]::Matches($Text, '[A-Za-z]:\\[^"*?<>|,;]*?(?=\s+[A-Za-z]:\\|["*?<>|,;]|$)')) {
+        $p = $m.Value.Trim().TrimEnd('\').ToLowerInvariant()
+        while ($p.Length -gt 3) {
+            [void]$Set.Add($p)
+            $i = $p.LastIndexOf('\')
+            if ($i -lt 3) { break }
+            $p = $p.Substring(0, $i)
+        }
+    }
+}
+
+# Collects what is installed or in use: folders (Anc) and name fragments (Tok)
+function Build-Known {
+    $anc = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    $tok = New-Object 'System.Collections.Generic.HashSet[string]'
+
+    $ukeys = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
+               'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*',
+               'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*')
+    foreach ($it in @(Get-ItemProperty -Path $ukeys -ErrorAction SilentlyContinue)) {
+        foreach ($f in @('DisplayName', 'Publisher', 'PSChildName')) {
+            $n = Norm ([string]$it.$f)
+            if ($n.Length -ge 3) { [void]$tok.Add($n) }
+        }
+        foreach ($f in @('InstallLocation', 'DisplayIcon', 'UninstallString', 'QuietUninstallString', 'ModifyPath')) {
+            Add-PathStrings ([string]$it.$f) $anc
+        }
+    }
+    foreach ($k in @(Get-ChildItem -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Services' -ErrorAction SilentlyContinue)) {
+        $ip = $null
+        try { $ip = $k.GetValue('ImagePath') } catch { }
+        if ($ip) { Add-PathStrings ([string]$ip) $anc }
+    }
+    $runKeys = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run', 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce',
+                 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run',
+                 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run', 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\RunOnce')
+    foreach ($rk in $runKeys) {
+        $key = Get-Item -LiteralPath $rk -ErrorAction SilentlyContinue
+        if ($key) { foreach ($vn in $key.GetValueNames()) { Add-PathStrings ([string]$key.GetValue($vn)) $anc } }
+    }
+    $apRoots = @('HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths',
+                 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths',
+                 'HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths')
+    foreach ($ap in $apRoots) {
+        foreach ($k in @(Get-ChildItem -LiteralPath $ap -ErrorAction SilentlyContinue)) {
+            Add-PathStrings ([string]$k.GetValue('')) $anc
+            Add-PathStrings ([string]$k.GetValue('Path')) $anc
+        }
+    }
+    foreach ($p in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) { Add-PathStrings ([string]$p.ExecutablePath) $anc }
+    try {
+        foreach ($t in @(Get-ScheduledTask -ErrorAction Stop)) {
+            foreach ($a in @($t.Actions)) {
+                Add-PathStrings ([string]$a.Execute) $anc
+                Add-PathStrings ([string]$a.Arguments) $anc
+                Add-PathStrings ([string]$a.WorkingDirectory) $anc
+            }
+        }
+    } catch { }
+    Add-PathStrings $SelfPath $anc
+    return @{ Anc = $anc; Tok = @($tok) }
+}
+
+# True when the normalized folder name matches an installed program or publisher
+function Is-Linked([string]$n, $Tokens) {
+    foreach ($t in $Tokens) {
+        if ($n.Length -ge 4) {
+            if ($t.Contains($n)) { return $true }
+            if (($t.Length -ge 5) -and $n.Contains($t)) { return $true }
+        } else {
+            if ($t.StartsWith($n)) { return $true }
+        }
+    }
+    return $false
+}
+
+function Find-Orphans {
+    $known = Build-Known
+    $anc = $known.Anc
+    $tok = $known.Tok
+    $minAge = (Get-Date).ToUniversalTime().AddDays(-30)
+    $res = New-Object System.Collections.ArrayList
+    $roots = @(
+        @{ Path = $env:ProgramFiles;                      Label = 'Program Files';       Kind = 'Program' },
+        @{ Path = ${env:ProgramFiles(x86)};               Label = 'Program Files (x86)'; Kind = 'Program' },
+        @{ Path = ($env:LocalAppData + '\Programs');      Label = 'AppData\Local\Programs'; Kind = 'Program' },
+        @{ Path = $env:ProgramData;                       Label = 'ProgramData';         Kind = 'Data' },
+        @{ Path = $env:LocalAppData;                      Label = 'AppData\Local';       Kind = 'Data' },
+        @{ Path = $env:APPDATA;                           Label = 'AppData\Roaming';     Kind = 'Data' },
+        @{ Path = ($env:USERPROFILE + '\AppData\LocalLow'); Label = 'AppData\LocalLow';  Kind = 'Data' }
+    )
+    foreach ($r in $roots) {
+        if ((-not $r.Path) -or (-not (Test-Path -LiteralPath $r.Path))) { continue }
+        foreach ($d in @(Get-ChildItem -LiteralPath $r.Path -Directory -Force -ErrorAction SilentlyContinue)) {
+            if (($d.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { continue }
+            if (($d.Attributes -band [IO.FileAttributes]::System) -ne 0) { continue }
+            if ($d.Name.ToLowerInvariant() -match $ProtectedRx) { continue }
+            $full = $d.FullName
+            if ($anc.Contains($full.TrimEnd('\').ToLowerInvariant())) { continue }
+            $n = Norm $d.Name
+            if (-not $n) { continue }
+            if (Is-Linked $n $tok) { continue }
+            $info = [FtScan]::Measure($full, 0, '*', $true)
+            if ($info.Bytes -lt 1MB) { continue }
+            $newest = New-Object DateTime ([int64]$info.Newest), ([DateTimeKind]::Utc)
+            if ($newest -gt $minAge) { continue }
+            [void]$res.Add([pscustomobject]@{
+                Name = $d.Name; Path = $full; Location = $r.Label; Kind = $r.Kind
+                Bytes = [int64]$info.Bytes; Newest = $newest; Files = [int]$info.Files; Exe = [int]$info.Exe })
+        }
+    }
+    return @($res | Sort-Object -Property Bytes -Descending)
+}
+
+# The scan result is kept in a small text file so the radar and the scanner window share it.
+# Line 1: TOTAL=bytes. Other lines: bytes|newest ticks|location|name|path|files|exe|kind
+function Save-Orphans($List) {
+    if (-not $OrphFile) { return }
+    $tot = [int64]0
+    foreach ($o in $List) { $tot += [int64]$o.Bytes }
+    $lines = New-Object System.Collections.ArrayList
+    [void]$lines.Add('TOTAL=' + [string]$tot)
+    foreach ($o in $List) {
+        [void]$lines.Add((@([string]$o.Bytes, [string]$o.Newest.Ticks, $o.Location, $o.Name, $o.Path, [string]$o.Files, [string]$o.Exe, $o.Kind) -join '|'))
+    }
+    try { [IO.File]::WriteAllLines($OrphFile, [string[]]$lines, (New-Object Text.UTF8Encoding $false)) } catch { }
+}
+
+function Read-Orphans {
+    $out = @()
+    if ((-not $OrphFile) -or (-not (Test-Path -LiteralPath $OrphFile))) { return $null }
+    $lines = @()
+    try { $lines = @([IO.File]::ReadAllLines($OrphFile, (New-Object Text.UTF8Encoding $false))) } catch { return $null }
+    foreach ($l in ($lines | Select-Object -Skip 1)) {
+        $p = $l.Split('|')
+        if ($p.Count -lt 8) { continue }
+        $out += [pscustomobject]@{
+            Bytes = [int64]$p[0]; Newest = (New-Object DateTime ([int64]$p[1]), ([DateTimeKind]::Utc)); Location = $p[2]; Name = $p[3]
+            Path = $p[4]; Files = [int]$p[5]; Exe = [int]$p[6]; Kind = $p[7] }
+    }
+    return ,@($out)
+}
+
+function Read-OrphTotal {
+    if ((-not $OrphFile) -or (-not (Test-Path -LiteralPath $OrphFile))) { return [int64]0 }
+    try {
+        $first = [IO.File]::ReadAllLines($OrphFile, (New-Object Text.UTF8Encoding $false)) | Select-Object -First 1
+        if ($first -match '^TOTAL=(\d+)$') { return [int64]$Matches[1] }
+    } catch { }
+    return [int64]0
+}
+
+# ====================================================================
+#  RADAR mode
+# ====================================================================
+if ($Mode -eq 'RADAR') {
+    $deep = [int64]0; $thumb = [int64]0; $bin = [int64]0; $orph = [int64]0
+    try { $deep = [int64](Get-DeepBytes) } catch { }
+    try { $thumb = [int64](Get-ThumbBytes) } catch { }
+    try { $bin = [int64](Get-BinBytes) } catch { }
+    if ($RadarMode -eq 'FULL') {
+        try {
+            $list = @(Find-Orphans)
+            Save-Orphans $list
+            foreach ($o in $list) { $orph += [int64]$o.Bytes }
+        } catch { }
+    } else {
+        $orph = Read-OrphTotal
+    }
+    [Console]::WriteLine('DEEP=' + (Fmt $deep))
+    [Console]::WriteLine('THUMB=' + (Fmt $thumb))
+    [Console]::WriteLine('ORPH=' + (Fmt $orph))
+    [Console]::WriteLine('BIN=' + (Fmt $bin))
+    [Console]::WriteLine('TOTAL=' + (Fmt ($deep + $thumb + $orph + $bin)))
+    exit 0
+}
+
+# ====================================================================
+#  ORPHANS mode (interactive)
+# ====================================================================
+function Line([string]$t, [string]$c = 'Gray') { Write-Host $t -ForegroundColor $c }
+
+function Ask-YN([string]$q) {
+    while ($true) {
+        $a = Read-Host ($q + ' [Y/N]')
+        if ($a -match '^(?i:y)$') { return $true }
+        if ($a -match '^(?i:n)$') { return $false }
+    }
+}
+
+# "1,3,5-7" -> 1 3 5 6 7. Returns $null when the text is not understood or a number is out of range.
+function Parse-Selection([string]$Text, [int]$Count) {
+    $out = New-Object System.Collections.ArrayList
+    foreach ($part in ($Text -split '[,;\s]+')) {
+        if (-not $part) { continue }
+        if ($part.Length -gt 7) { return $null }
+        if ($part -match '^(\d+)-(\d+)$') {
+            $lo = [int]$Matches[1]
+            $hi = [int]$Matches[2]
+            if (($lo -lt 1) -or ($hi -gt $Count) -or ($lo -gt $hi)) { return $null }
+            for ($i = $lo; $i -le $hi; $i++) { if ($out -notcontains $i) { [void]$out.Add($i) } }
+        } elseif ($part -match '^\d+$') {
+            $n = [int]$part
+            if (($n -lt 1) -or ($n -gt $Count)) { return $null }
+            if ($out -notcontains $n) { [void]$out.Add($n) }
+        } else { return $null }
+    }
+    if ($out.Count -eq 0) { return $null }
+    return ,@($out | Sort-Object)
+}
+
+function Show-OrphList($List, [int]$Max) {
+    Line ''
+    Line ('  ' + '#'.PadRight(4) + 'Size'.PadRight(10) + 'Unused'.PadRight(11) + 'Type'.PadRight(9) + 'Where'.PadRight(24) + 'Folder') 'DarkGray'
+    $now = (Get-Date).ToUniversalTime()
+    $shown = [math]::Min($List.Count, $Max)
+    for ($i = 0; $i -lt $shown; $i++) {
+        $o = $List[$i]
+        $days = [int]($now - $o.Newest).TotalDays
+        $row = '  ' + ([string]($i + 1)).PadRight(4) + (Fmt $o.Bytes).PadRight(10) + ([string]$days + ' days').PadRight(11) + ([string]$o.Kind).PadRight(9) + ([string]$o.Location).PadRight(24) + $o.Name
+        $col = 'White'
+        if ($o.Kind -eq 'Data') { $col = 'Gray' }
+        Line $row $col
+    }
+    if ($List.Count -gt $shown) { Line ('  ...and ' + ($List.Count - $shown) + ' more smaller folder(s) (listed in the report file).') 'DarkGray' }
+}
+
+function Save-OrphReport($List) {
+    if ((-not $LogDir) -or (-not (Test-Path -LiteralPath $LogDir))) { return $null }
+    $stamp = (Get-Date).ToString('yyyyMMdd_HHmmss', [cultureinfo]::InvariantCulture)
+    $f = Join-Path $LogDir ('OrphanedFiles_' + $stamp + '.txt')
+    $now = (Get-Date).ToUniversalTime()
+    $L = New-Object System.Collections.ArrayList
+    [void]$L.Add('ORPHANED FILE SCANNER REPORT - ' + (Get-Date).ToString('yyyy-MM-dd HH:mm:ss', [cultureinfo]::InvariantCulture))
+    [void]$L.Add('Folders that probably belong to programs that are no longer installed. They are SUSPECTS, not proof.')
+    [void]$L.Add('')
+    $tot = [int64]0
+    foreach ($o in $List) {
+        $tot += [int64]$o.Bytes
+        [void]$L.Add((Fmt $o.Bytes) + ' | unused ' + [int](($now - $o.Newest).TotalDays) + ' days | ' + $o.Kind + ' | ' + $o.Path + ' | files: ' + $o.Files)
+    }
+    [void]$L.Add('')
+    [void]$L.Add('Total: ' + (Fmt $tot))
+    try { [IO.File]::WriteAllLines($f, [string[]]$L, (New-Object Text.UTF8Encoding $true)); return $f } catch { return $null }
+}
+
+function Remove-ToBin([string]$Path) {
+    Add-Type -AssemblyName Microsoft.VisualBasic
+    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory($Path, [Microsoft.VisualBasic.FileIO.UIOption]::OnlyErrorDialogs, [Microsoft.VisualBasic.FileIO.RecycleOption]::SendToRecycleBin)
+}
+
+function Run-OrphansUi {
+    try { $Host.UI.RawUI.WindowTitle = 'Orphaned File Scanner' } catch { }
+    Clear-Host
+    Line ''
+    Line '  ORPHANED FILE SCANNER' 'Yellow'
+    Line '  Finds folders that probably belong to programs that are no longer installed.' 'Gray'
+    Line '  The list is for your review. Nothing is removed unless you pick it and type DELETE.' 'Gray'
+    Line ''
+    $list = Read-Orphans
+    if ($null -eq $list) {
+        Line '  Scanning Program Files, ProgramData and AppData - please wait...' 'Cyan'
+        $list = @(Find-Orphans)
+        Save-Orphans $list
+    }
+    $list = @($list)
+    Log ('Scanner opened, ' + $list.Count + ' suspect folder(s)')
+    $report = $null
+    $first = $true
+    while ($true) {
+        if ($list.Count -eq 0) {
+            Line ''
+            Line '  No leftover folders were found. Nothing to review.' 'Green'
+            break
+        }
+        if ($first) { $report = Save-OrphReport $list; $first = $false }
+        $tot = [int64]0
+        foreach ($o in $list) { $tot += [int64]$o.Bytes }
+        Show-OrphList $list 50
+        Line ''
+        Line ('  Total of these folders: ' + (Fmt $tot)) 'White'
+        Line '  Program = program files left behind.  Data = settings, caches or SAVES left behind (check before removing).' 'DarkGray'
+        if ($report) { Line ('  Report saved: ' + $report) 'DarkGray' }
+        Line ''
+        Line '  Type the numbers to remove (example: 1,3,5-7)' 'White'
+        Line '  O + number opens that folder so you can look inside (example: O2)    R = scan again    Enter or 0 = go back' 'DarkGray'
+        $a = (Read-Host '  Your choice').Trim()
+        if ((-not $a) -or ($a -eq '0')) { break }
+        if ($a -match '^(?i:r)$') {
+            Line ''
+            Line '  Scanning again - please wait...' 'Cyan'
+            $list = @(Find-Orphans)
+            Save-Orphans $list
+            $first = $true
+            continue
+        }
+        if ($a -match '^(?i:o)\s*(\d+)$') {
+            $n = [int]$Matches[1]
+            if (($n -ge 1) -and ($n -le [math]::Min($list.Count, 50))) {
+                try { Start-Process -FilePath 'explorer.exe' -ArgumentList ('"' + $list[$n - 1].Path + '"') } catch { }
+            } else { Line '  That number is not in the list.' 'Yellow' }
+            continue
+        }
+        $sel = Parse-Selection $a ([math]::Min($list.Count, 50))
+        if ($null -eq $sel) { Line '  Not understood. Use numbers from the list, like 1,3,5-7.' 'Yellow'; continue }
+        $picked = @()
+        foreach ($i in $sel) { $picked += $list[[int]$i - 1] }
+        Line ''
+        Line '  You selected:' 'White'
+        $sum = [int64]0
+        foreach ($o in $picked) { Line ('    ' + (Fmt $o.Bytes).PadRight(9) + $o.Path) 'Gray'; $sum += [int64]$o.Bytes }
+        Line ('  Total: ' + (Fmt $sum)) 'White'
+        Line ''
+        Line '  Folders are sent to the Recycle Bin, so you can restore them. A folder too big for the Recycle Bin' 'Yellow'
+        Line '  is deleted for good by Windows. The space is freed after you empty the Recycle Bin (option 4).' 'Yellow'
+        $t = Read-Host '  Type DELETE in capital letters to confirm, or press Enter to cancel'
+        if ($t -cne 'DELETE') { Line '  Cancelled. Nothing was removed.' 'Gray'; continue }
+        $running = @()
+        foreach ($p in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue)) { if ($p.ExecutablePath) { $running += [string]$p.ExecutablePath } }
+        $removed = @()
+        foreach ($o in $picked) {
+            if (-not (Test-Path -LiteralPath $o.Path -PathType Container)) { Line ('  [SKIP] Already gone: ' + $o.Path) 'Yellow'; $removed += $o; continue }
+            $busy = @($running | Where-Object { $_.StartsWith($o.Path + '\', [StringComparison]::OrdinalIgnoreCase) })
+            if ($busy.Count -gt 0) { Line ('  [SKIP] A program from this folder is running: ' + $o.Path) 'Yellow'; continue }
+            try {
+                Remove-ToBin $o.Path
+                if (Test-Path -LiteralPath $o.Path) { Line ('  [WARN] Only part of it could be removed: ' + $o.Path) 'Yellow' }
+                else { Line ('  [ OK ] Removed: ' + $o.Path) 'Green'; $removed += $o; Log ('Removed to Recycle Bin: ' + $o.Path) }
+            } catch {
+                Line ('  [FAIL] ' + $o.Path + ' - ' + $_.Exception.Message) 'Red'
+                Log ('Failed to remove ' + $o.Path + ' : ' + $_.Exception.Message)
+            }
+        }
+        $keep = @()
+        foreach ($o in $list) { $hit = $false; foreach ($r in $removed) { if ($r.Path -eq $o.Path) { $hit = $true } }; if (-not $hit) { $keep += $o } }
+        $list = @($keep)
+        Save-Orphans $list
+        $first = $true
+        Line ''
+        [void](Read-Host '  Press Enter to continue')
+        Clear-Host
+        Line ''
+        Line '  ORPHANED FILE SCANNER' 'Yellow'
+    }
+    Line ''
+    [void](Read-Host '  Press Enter to close this window')
+}
+
+if ($Mode -eq 'ORPHANS') {
+    try { Run-OrphansUi } catch { Line ('Unexpected problem: ' + $_.Exception.Message) 'Red'; Log ('Unexpected error: ' + $_.Exception.Message); [void](Read-Host 'Press Enter to close') ; exit 1 }
+    exit 0
+}
+#CL_END
