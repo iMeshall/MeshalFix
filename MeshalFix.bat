@@ -141,6 +141,7 @@ goto :MAIN_MENU
 
 :EXIT_TOOL
 call :log "==== Toolkit closed ===="
+if defined SR_DIR if exist "%SR_DIR%\sysreports_engine.ps1" rd /s /q "%SR_DIR%" >nul 2>&1
 echo.
 echo   Goodbye.
 timeout /t 2 /nobreak >nul
@@ -640,8 +641,13 @@ if not defined ALLMODE (
 call :step 3 4 "Running Disk Cleanup - wait for its window to finish..."
 start "" /wait cleanmgr.exe /sagerun:99
 call :step 4 4 "Cleaning old Windows component versions (WinSxS) - this can take several minutes, please wait..."
-Dism.exe /Online /Cleanup-Image /StartComponentCleanup
-call :log "DISM StartComponentCleanup finished"
+set "RUN_CMD=Dism.exe /Online /Cleanup-Image /StartComponentCleanup"
+call :run_long "Cleaning old Windows component versions (WinSxS)" "2 to 15 minutes" "The cleanup stops before it finishes. Nothing is damaged - you can run it again later."
+call :log "DISM StartComponentCleanup finished, code !RL_RC!"
+if "!RUN_CANCELLED!"=="1" (
+    call :warn "Component cleanup was cancelled. Disk Cleanup itself already finished."
+    exit /b 1223
+)
 call :ok "Disk Cleanup and component cleanup finished."
 exit /b
 
@@ -763,8 +769,13 @@ if errorlevel 1 (
     )
 )
 call :step 1 1 "Optimizing drives - wait until it finishes..."
-defrag.exe /C /O /U
-call :log "Drive optimization finished"
+set "RUN_CMD=defrag.exe /C /O /U"
+call :run_long "Optimizing drives" "1 to 30 minutes (longer on hard drives)" "Drive optimization stops before it finishes. It is safe - Windows will finish it later by itself."
+call :log "Drive optimization finished, code !RL_RC!"
+if "!RUN_CANCELLED!"=="1" (
+    call :warn "Drive optimization was cancelled."
+    exit /b 1223
+)
 call :ok "Drive optimization finished."
 exit /b
 
@@ -823,8 +834,13 @@ goto :REPAIR_MENU
 rem --- DISM CheckHealth ---
 :dism_check
 call :step 1 2 "Running DISM CheckHealth..."
-dism.exe /Online /Cleanup-Image /CheckHealth
-call :log "DISM CheckHealth exit code %errorlevel%"
+set "RUN_CMD=dism.exe /Online /Cleanup-Image /CheckHealth"
+call :run_long "DISM CheckHealth" "under 1 minute" "CheckHealth stops. Nothing is changed."
+call :log "DISM CheckHealth exit code !RL_RC!"
+if "!RUN_CANCELLED!"=="1" (
+    call :warn "DISM CheckHealth was cancelled."
+    exit /b 1223
+)
 call :step 2 2 "Reading the health state..."
 call :dism_state
 exit /b
@@ -833,8 +849,13 @@ rem --- DISM ScanHealth ---
 :dism_scan
 call :info "ScanHealth can take 5 to 20 minutes. Do not close this window."
 call :step 1 2 "Running DISM ScanHealth..."
-dism.exe /Online /Cleanup-Image /ScanHealth
-call :log "DISM ScanHealth exit code %errorlevel%"
+set "RUN_CMD=dism.exe /Online /Cleanup-Image /ScanHealth"
+call :run_long "DISM ScanHealth" "5 to 20 minutes" "ScanHealth stops before it finishes. It only scans, so nothing is changed."
+call :log "DISM ScanHealth exit code !RL_RC!"
+if "!RUN_CANCELLED!"=="1" (
+    call :warn "DISM ScanHealth was cancelled."
+    exit /b 1223
+)
 call :step 2 2 "Reading the health state..."
 call :dism_state
 exit /b
@@ -862,8 +883,14 @@ rem --- DISM RestoreHealth ---
 call :info "RestoreHealth needs an internet connection and can take 10 to 30 minutes."
 call :info "The progress may look stuck at 20 or 62 percent - this is normal, just wait."
 call :step 1 1 "Running DISM RestoreHealth..."
-dism.exe /Online /Cleanup-Image /RestoreHealth
-set "RC=%errorlevel%"
+set "RUN_CMD=dism.exe /Online /Cleanup-Image /RestoreHealth"
+call :run_long "DISM RestoreHealth" "10 to 30 minutes" "RestoreHealth stops before it finishes. The repair is not completed, but Windows is not harmed. You can run it again later."
+set "RC=!RL_RC!"
+if "!RUN_CANCELLED!"=="1" (
+    call :warn "DISM RestoreHealth was cancelled."
+    exit /b 1223
+)
+
 call :log "DISM RestoreHealth exit code %RC%"
 if "%RC%"=="0" (
     call :ok "DISM finished successfully. The Windows image is repaired."
@@ -876,15 +903,21 @@ exit /b
 
 rem --- SFC /scannow ---
 :sfc_run
-call :info "SFC takes 10 to 30 minutes. Do not close this window."
+call :info "SFC takes 10 to 30 minutes. A loading bar shows the progress. Press C in the progress window to cancel."
 call :step 1 3 "Recording the start time..."
 set "SFC_START="
 set "FT_PS=(Get-Date).ToString('yyyy-MM-dd HH:mm:ss', [cultureinfo]::InvariantCulture)"
 call :psx
 for /f "usebackq delims=" %%T in ("%FT_OUT%") do set "SFC_START=%%T"
 call :step 2 3 "Running SFC - System File Checker..."
-sfc /scannow
-call :log "SFC finished, exit code %errorlevel%"
+set "RUN_CMD=sfc /scannow"
+call :run_long "SFC - System File Checker" "10 to 30 minutes" "SFC stops before it finishes. Your files are not changed by a cancelled scan - you can run it again later."
+call :log "SFC finished, exit code !RL_RC!"
+if "!RUN_CANCELLED!"=="1" (
+    call :warn "SFC was cancelled."
+    exit /b 1223
+)
+
 call :step 3 3 "Reading the result from the CBS log..."
 set "FT_PS=$s='%SFC_START%'; $l=@(Select-String -Path '%SystemRoot%\Logs\CBS\CBS.log' -Pattern '\[SR\]' -ErrorAction SilentlyContinue | ForEach-Object { $_.Line } | Where-Object { $_.Length -gt 19 -and $_.Substring(0,19) -ge $s }); if($l.Count -eq 0){exit 15}; if(@($l | Where-Object { $_ -match 'Cannot repair member file' }).Count -gt 0){exit 12}; if(@($l | Where-Object { $_ -match 'Repairing corrupted file|successfully repaired|Repairing [1-9][0-9]* components' }).Count -gt 0){exit 11}; if(@($l | Where-Object { $_ -match 'Verify complete' }).Count -gt 0){exit 10}; exit 15"
 call :psx
@@ -910,12 +943,28 @@ if "%CONFIRMED%"=="0" (
 )
 call :info "=== STEP 1 of 4: DISM CheckHealth ==="
 call :dism_check
+if "!RUN_CANCELLED!"=="1" (
+    call :warn "Full repair stopped because you cancelled."
+    exit /b 1223
+)
 call :info "=== STEP 2 of 4: DISM ScanHealth ==="
 call :dism_scan
+if "!RUN_CANCELLED!"=="1" (
+    call :warn "Full repair stopped because you cancelled."
+    exit /b 1223
+)
 call :info "=== STEP 3 of 4: DISM RestoreHealth ==="
 call :dism_restore
+if "!RUN_CANCELLED!"=="1" (
+    call :warn "Full repair stopped because you cancelled."
+    exit /b 1223
+)
 call :info "=== STEP 4 of 4: SFC /scannow ==="
 call :sfc_run
+if "!RUN_CANCELLED!"=="1" (
+    call :warn "Full repair stopped because you cancelled."
+    exit /b 1223
+)
 echo.
 call :ok "Full repair sequence finished. A restart is recommended."
 exit /b
@@ -966,8 +1015,13 @@ set /p "M=  Select an option: "
 if "%M%"=="0" exit /b
 if "%M%"=="1" (
     call :step 1 1 "Scanning drive !DRV!: (read-only)..."
-    chkdsk !DRV!: /scan
-    set "CR=!errorlevel!"
+    set "RUN_CMD=chkdsk !DRV!: /scan"
+    call :run_long "CHKDSK scan of !DRV!:" "5 to 60 minutes" "The scan stops before it finishes. It is read-only, so nothing is changed."
+    set "CR=!RL_RC!"
+    if "!RUN_CANCELLED!"=="1" (
+        call :warn "CHKDSK scan was cancelled."
+        exit /b 1223
+    )
     call :log "CHKDSK scan on !DRV! exit code !CR!"
     if "!CR!"=="0" (
         call :ok "No disk errors were found on !DRV!:."
@@ -984,8 +1038,14 @@ if "%CONFIRMED%"=="0" (
     exit /b
 )
 call :step 1 1 "Starting CHKDSK repair on !DRV!:..."
-echo Y| chkdsk %DRV%: /f /r
-call :log "CHKDSK repair started on !DRV!"
+set "RUN_CMD=echo Y| chkdsk !DRV!: /f /r"
+call :run_long "CHKDSK repair of !DRV!:" "10 minutes to several hours" "CHKDSK stops before it finishes. Stopping a repair part-way is not ideal - run it again soon to finish the repair."
+call :log "CHKDSK repair finished or scheduled, code !RL_RC!"
+if "!RUN_CANCELLED!"=="1" (
+    call :warn "CHKDSK repair was cancelled."
+    exit /b 1223
+)
+
 call :info "If CHKDSK said it will run at the next restart, restart your PC now and do not interrupt it."
 exit /b
 
@@ -2494,10 +2554,10 @@ exit /b 0
 if defined T_FRESH call :tool_sig
 for %%F in ("!T_EXE_PATH!") do set "T_EXE_DIR=%%~dpF"
 set "T_EXE_DIR=!T_EXE_DIR:~0,-1!"
-call :info "Starting !T_NAME! - close it to come back to this menu."
+call :info "Starting !T_NAME! - you can keep using this menu while it is open."
 call :log "Tool started: !T_EXE_PATH!"
-start "" /wait /d "!T_EXE_DIR!" "!T_EXE_PATH!"
-call :log "Tool closed: !T_NAME!"
+start "" /d "!T_EXE_DIR!" "!T_EXE_PATH!"
+call :log "Tool launched (not waiting for it to close): !T_NAME!"
 exit /b 0
 
 rem --- Looks for the program inside the tool folder, then at the FIND= paths (first match wins) ---
@@ -2909,86 +2969,147 @@ set "FT_PART5=$vr=@{}; Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Cla
 set "FT_PART6=$pm=@{}; try { Get-CimInstance -Namespace root/microsoft/windows/storage -ClassName MSFT_PhysicalDisk -ErrorAction Stop | ForEach-Object { $pm[[string]$_.DeviceId]=$_ } } catch { }; $disks=@(Get-CimInstance Win32_DiskDrive | Where-Object { $_.InterfaceType -ne 'USB' -and $_.PNPDeviceID -notmatch 'USBSTOR' } | Sort-Object { [int]$_.Index }); $di=0; foreach($dk in $disks){ $di++; $pd=$pm[[string]$dk.Index]; $dt=''; if($pd){ if($pd.BusType -eq 17){ $dt='NVMe SSD' } elseif($pd.MediaType -eq 4){ $dt='SATA SSD' } elseif($pd.MediaType -eq 3){ $dt='HDD' } }; if(-not $dt){ if($dk.PNPDeviceID -match 'NVME'){ $dt='NVMe SSD' } elseif($dk.Model -match 'SSD'){ $dt='SSD' } }; $hs=''; if($pd){ $hs=@{0='Healthy';1='Warning';2='Unhealthy'}[[int]$pd.HealthStatus] } elseif($dk.Status -eq 'OK'){ $hs='Healthy' } else { $hs=[string]$dk.Status }; $ex=(@($dt,$hs) | Where-Object { $_ }) -join ', '; $dl=(Clean $dk.Model)+'  -  '+(Sz $dk.Size); if($ex){ $dl=$dl+'  ('+$ex+')' }; Add-Row ('Storage '+$di) $dl };"
 set "FT_PART7=function Qual($w,$h){ if($w -ge 7680){ '8K UHD 4320p' } elseif(($w -ge 5120) -and ($h -le 1600)){ '32:9 Ultrawide' } elseif(($w -ge 3840) -and ($h -ge 2000)){ '4K UHD 2160p' } elseif(($w -ge 3440) -and ($h -ge 1440)){ 'Ultrawide QHD' } elseif(($w -ge 2560) -and ($h -le 1100)){ 'Ultrawide FHD' } elseif($w -ge 2560){ if($h -eq 1440){ 'QHD 1440p' } else { 'QHD+' } } elseif(($w -ge 1920) -and ($h -ge 1080)){ 'Full HD 1080p' } elseif($w -ge 1600){ 'HD+ 900p' } elseif(($w -ge 1280) -and ($h -ge 720)){ 'HD 720p' } else { '' } }; function Mode($rw,$rh,$hz){ $t=''+$rw+'x'+$rh; $ql=Qual $rw $rh; if($ql){ $t=$t+' ('+$ql+')' }; if($hz -gt 1){ $t=$t+'  -  '+$hz+' Hz' }; $t }; $csrc='using System; using System.Runtime.InteropServices; public class DM { [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct DEVMODE { [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string dmDeviceName; public short dmSpecVersion; public short dmDriverVersion; public short dmSize; public short dmDriverExtra; public int dmFields; public int dmPositionX; public int dmPositionY; public int dmDisplayOrientation; public int dmDisplayFixedOutput; public short dmColor; public short dmDuplex; public short dmYResolution; public short dmTTOption; public short dmCollate; [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string dmFormName; public short dmLogPixels; public int dmBitsPerPel; public int dmPelsWidth; public int dmPelsHeight; public int dmDisplayFlags; public int dmDisplayFrequency; public int dmICMMethod; public int dmICMIntent; public int dmMediaType; public int dmDitherType; public int dmReserved1; public int dmReserved2; public int dmPanningWidth; public int dmPanningHeight; } [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)] public struct DD { public int cb; [MarshalAs(UnmanagedType.ByValTStr, SizeConst=32)] public string DeviceName; [MarshalAs(UnmanagedType.ByValTStr, SizeConst=128)] public string DeviceString; public int StateFlags; [MarshalAs(UnmanagedType.ByValTStr, SizeConst=128)] public string DeviceID; [MarshalAs(UnmanagedType.ByValTStr, SizeConst=128)] public string DeviceKey; } [DllImport(QQuser32.dllQQ, CharSet=CharSet.Unicode)] public static extern bool EnumDisplayDevices(string dev, uint i, ref DD d, uint f); [DllImport(QQuser32.dllQQ, CharSet=CharSet.Unicode)] public static extern bool EnumDisplaySettings(string dev, int m, ref DEVMODE dm); public static string[] Get() { System.Collections.ArrayList r = new System.Collections.ArrayList(); DD d = new DD(); d.cb = Marshal.SizeOf(d); for (uint i = 0; EnumDisplayDevices(null, i, ref d, 0); i++) { if ((d.StateFlags & 1) == 1) { DEVMODE m = new DEVMODE(); m.dmSize = (short)Marshal.SizeOf(m); if (EnumDisplaySettings(d.DeviceName, -1, ref m)) { DD n = new DD(); n.cb = Marshal.SizeOf(n); string id = QQQQ; if (EnumDisplayDevices(d.DeviceName, 0, ref n, 0)) { id = n.DeviceID; } r.Add(id + QQ|QQ + m.dmPelsWidth + QQ|QQ + m.dmPelsHeight + QQ|QQ + m.dmDisplayFrequency); } } d.cb = Marshal.SizeOf(d); } return (string[])r.ToArray(typeof(string)); } }'; $dl=@(); try { if(-not ('DM' -as [type])){ Add-Type -TypeDefinition ($csrc.Replace('QQ',[string][char]34)) }; foreach($e in @([DM]::Get())){ $q=([string]$e).Split('|'); $cd0=''; $tk=$q[0].Split('\'); if($tk.Count -ge 2){ $cd0=$tk[1] }; if([int]$q[1] -gt 0){ $dl+=,@($cd0,(Mode ([int]$q[1]) ([int]$q[2]) ([int]$q[3]))) } } } catch { }; if($dl.Count -eq 0){ foreach($gx in $gpus){ if($gx.CurrentHorizontalResolution -gt 0){ $dl+=,@('',(Mode ([int]$gx.CurrentHorizontalResolution) ([int]$gx.CurrentVerticalResolution) ([int]$gx.CurrentRefreshRate))) } } };"
 set "FT_PART8=$mons=@(); try { $mons=@(Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorID -ErrorAction Stop | Where-Object { $_.Active -ne $false }) } catch { }; $bp=@{}; try { Get-CimInstance -Namespace root/wmi -ClassName WmiMonitorBasicDisplayParams -ErrorAction Stop | ForEach-Object { $bp[[string]$_.InstanceName]=$_ } } catch { }; $mkm=@{GSM='LG';SAM='Samsung';DEL='Dell';AOC='AOC';GBT='Gigabyte';ACR='Acer';AUS='ASUS';MSI='MSI';BNQ='BenQ';HKC='HKC';PHL='Philips';HWP='HP';LEN='Lenovo';VSC='ViewSonic';SNY='Sony';IVM='Iiyama';NEC='NEC';BOE='BOE';AUO='AUO';LGD='LG Display';SDC='Samsung Display';TCL='TCL';XMI='Xiaomi'}; $mn=@(); $mc=@(); foreach($mo in $mons){ $nm=(-join ($mo.UserFriendlyName | Where-Object { $_ -gt 0 } | ForEach-Object { [char]$_ })).Trim(); $cd=(-join ($mo.ManufacturerName | Where-Object { $_ -gt 0 } | ForEach-Object { [char]$_ })).Trim(); $bn=$mkm[$cd]; if(-not $bn){ $bn=$cd }; if($nm){ if($nm -notmatch ('\A'+[regex]::Escape($bn))){ $nm=$bn+' '+$nm } } else { $nm=$bn+' monitor' }; $inch=''; $bq2=$bp[[string]$mo.InstanceName]; if($bq2 -and ($bq2.MaxHorizontalImageSize -gt 0) -and ($bq2.MaxVerticalImageSize -gt 0)){ $dg=[math]::Round([math]::Sqrt([math]::Pow($bq2.MaxHorizontalImageSize,2)+[math]::Pow($bq2.MaxVerticalImageSize,2))/2.54); if(($dg -ge 10) -and ($dg -le 100)){ $inch='  -  '+$dg+'-inch' } }; $mn+=($nm.Trim()+$inch); $ik=([string]$mo.InstanceName).Split('\'); $ic=''; if($ik.Count -ge 2){ $ic=$ik[1] }; $mc+=$ic }; if($mn.Count -eq 0){ for($mi=0; $mi -lt $dl.Count; $mi++){ $ml='Monitor'; if($dl.Count -gt 1){ $ml='Monitor '+($mi+1) }; Add-Row $ml $dl[$mi][1] } } else { for($mi=0; $mi -lt $mn.Count; $mi++){ $mt=$mn[$mi]; $fd=$null; foreach($x in $dl){ if($x[0] -and ($x[0] -eq $mc[$mi])){ $fd=$x[1] } }; if(-not $fd){ if($mn.Count -eq $dl.Count){ $fd=$dl[$mi][1] } elseif(($mn.Count -eq 1) -and ($dl.Count -ge 1)){ $fd=$dl[0][1] } }; if($fd){ $mt=$mt+'  -  '+$fd }; $ml='Monitor'; if($mn.Count -gt 1){ $ml='Monitor '+($mi+1) }; Add-Row $ml $mt } };"
-set "FT_PART9=$nics=@(Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.PhysicalAdapter -eq $true -and $_.Name -notmatch 'Virtual|VMware|VirtualBox|Hyper-V|Bluetooth|TAP|VPN|Miniport|Loopback|Tunnel|WAN' }); $ni=0; foreach($nc in $nics){ $ni++; $nt='Ethernet'; if($nc.Name -match 'Wi-?Fi|Wireless|802\.11|WLAN'){ $nt='Wi-Fi' }; $nl='Network'; if($nics.Count -gt 1){ $nl='Network '+$ni }; Add-Row $nl ((Clean $nc.Name)+'  ('+$nt+')') }; if($os){ $up=(Get-Date)-$os.LastBootUpTime; $us=('{0} days {1} hours' -f [int]$up.Days,$up.Hours); if($up.Days -ge 7){ $us=$us+'  (restart recommended)' }; Add-Row 'Uptime' $us };"
+set "FT_PART9=$nics=@(Get-CimInstance Win32_NetworkAdapter | Where-Object { $_.PhysicalAdapter -eq $true -and $_.Name -notmatch 'Virtual|VMware|VirtualBox|Hyper-V|Bluetooth|TAP|VPN|Miniport|Loopback|Tunnel|WAN' }); $ni=0; foreach($nc in $nics){ $ni++; $nt='Ethernet'; if($nc.Name -match 'Wi-?Fi|Wireless|802\.11|WLAN'){ $nt='Wi-Fi' }; $nl='Network'; if($nics.Count -gt 1){ $nl='Network '+$ni }; Add-Row $nl ((Clean $nc.Name)+'  ('+$nt+')') }; if($os){ $up=(Get-Date)-$os.LastBootUpTime; $us=('{0} days {1} hours {2} minutes' -f [int]$up.Days,$up.Hours,$up.Minutes); if($up.Days -ge 7){ $us=$us+'  (restart recommended)' }; Add-Row 'Uptime' $us };"
 set "FT_PART10=$w1=[math]::Max(11,($rows|ForEach-Object{ ([string]$_[0]).Length }|Measure-Object -Maximum).Maximum); $w2=[math]::Max(7,($rows|ForEach-Object{ ([string]$_[1]).Length }|Measure-Object -Maximum).Maximum); $gd=([string][char]27)+'[38;5;220m'; $rs=([string][char]27)+'[0m'; function Ln { $gd+'+'+('-'*($w1+2))+'+'+('-'*($w2+2))+'+'+$rs }; function Rw($s1,$s2){ $gd+'|'+$rs+' '+([string]$s1).PadRight($w1)+' '+$gd+'|'+$rs+' '+([string]$s2).PadRight($w2)+' '+$gd+'|'+$rs }; Ln; Rw 'Component' 'Details'; Ln; foreach($r in $rows){ Rw ($r[0]) ($r[1]) }; Ln; if($env:FT_QFILE -and ($mbv -notmatch '\AUnknown')){ [IO.File]::WriteAllText($env:FT_QFILE,[uri]::EscapeDataString($mbv+' BIOS update')) }"
 set "FT_PS=$s=((1..10)|ForEach-Object{ [Environment]::GetEnvironmentVariable('FT_PART'+$_) }) -join ' '; & ([scriptblock]::Create($s))"
-set "FT_SHOW=1"
-call :psx
+set "FT_RUN_PSMODE=1"
+set "FT_RUN_RAW=1"
+call :run_long "System Information" "under 1 minute" "Reading stops. Nothing is changed - you can open System Information again."
 for /l %%i in (1,1,10) do set "FT_PART%%i="
 echo.
 exit /b
 
 rem ==================================================================
-rem  9) SYSTEM REPORTS
+rem  9) SYSTEM REPORTS - built-in, read-only diagnostics and HTML report
+rem  The diagnostic engine is PowerShell code stored at the end of this file
+rem  (SR block). It runs in its own window; results of the session are kept in
+rem  SR_DIR so the HTML report (option 7) can use them.
 rem ==================================================================
 :Diagnostics
 call :header "9) SYSTEM REPORTS"
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% System Diagnostic Report     %cD%- Full PC health report (about 60 seconds)%cX%
-echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Reliability Monitor          %cD%- History of crashes and errors on a timeline%cX%
-echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Event Viewer                 %cD%- Browse every Windows log%cX%
-echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Recent Critical/Error events %cD%- Quick list of problems from the last 24 hours%cX%
-echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Resource Monitor             %cD%- Live CPU, RAM, disk and network use%cX%
-echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Task Manager                 %cD%- See and close running programs%cX%
-echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Performance Monitor          %cD%- Live performance counters%cX%
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% System Health Report        %cD%- Windows, hardware, storage and detected issues%cX%
+echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% System Error Analyzer       %cD%- Analyze System and Application event logs%cX%
+echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Crash ^& BSOD Analyzer       %cD%- App crashes, bugchecks, restarts and dumps%cX%
+echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Recent Critical/Error Events %cD%- Quick view of the last 24 hours%cX%
+echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% Reliability History         %cD%- Failures and incidents over time%cX%
+echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% Gaming Diagnostics          %cD%- Game crashes and related system evidence%cX%
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
 echo.
 set "M="
 set /p "M=  Select an option: "
 if "%M%"=="0" goto :MAIN_MENU
-if "%M%"=="1" goto :DIAG_REPORT
-if "%M%"=="2" goto :DIAG_RELIABILITY
-if "%M%"=="3" goto :DIAG_EVENT_VIEWER
-if "%M%"=="4" goto :DIAG_RECENT_EVENTS
-if "%M%"=="5" goto :DIAG_RESOURCE_MONITOR
-if "%M%"=="6" goto :DIAG_TASK_MANAGER
-if "%M%"=="7" goto :DIAG_PERFMON
+if "%M%"=="1" goto :SR_HEALTH
+if "%M%"=="2" goto :SR_ERRORS
+if "%M%"=="3" goto :SR_CRASH
+if "%M%"=="4" goto :SR_RECENT
+if "%M%"=="5" goto :SR_RELIABILITY
+if "%M%"=="6" goto :SR_GAMING
 goto :Diagnostics
 
-:DIAG_REPORT
-call :header "SYSTEM DIAGNOSTIC REPORT"
-call :info "Generating the report in Performance Monitor - this takes about 60 seconds..."
-start "" perfmon /report
-call :pause
+:SR_HEALTH
+call :sr_run Health
 goto :Diagnostics
 
-:DIAG_RELIABILITY
-call :header "RELIABILITY MONITOR"
-start "" perfmon /rel
-call :pause
+:SR_ERRORS
+call :sr_run Errors
 goto :Diagnostics
 
-:DIAG_EVENT_VIEWER
-call :header "EVENT VIEWER"
-start "" eventvwr.msc
-call :pause
+:SR_CRASH
+call :sr_run Crash
 goto :Diagnostics
 
-:DIAG_RECENT_EVENTS
-call :header "RECENT CRITICAL/ERROR EVENTS"
-call :info "Reading System and Application logs from the last 24 hours..."
-set "FT_PS=$start=(Get-Date).AddHours(-24); $events=Get-WinEvent -FilterHashtable @{LogName='System','Application'; StartTime=$start; Level=1,2,3} -ErrorAction SilentlyContinue; if ($events) { $events | Select-Object -First 100 TimeCreated,LogName,LevelDisplayName,ProviderName,Id,Message | Format-List } else { 'No critical or error events found in the last 24 hours.' }"
-set "FT_SHOW=1"
+:SR_RECENT
+call :sr_run Recent
+goto :Diagnostics
+
+:SR_RELIABILITY
+call :sr_run Reliability
+goto :Diagnostics
+
+:SR_GAMING
+call :sr_run Gaming
+goto :Diagnostics
+
+rem --- Cuts the System Reports engine (SR block at the end of this file) into a temp .ps1 once per session ---
+:sr_prepare
+if not defined SR_DIR set "SR_DIR=%TEMP%\MeshalFix_Session_%RANDOM%%RANDOM%"
+if not exist "%SR_DIR%\" mkdir "%SR_DIR%" >nul 2>&1
+if not exist "%SR_DIR%\" exit /b 1
+set "FT_SELF=%SCRIPT%"
+set "FT_SRPS=%SR_DIR%\sysreports_engine.ps1"
+if defined SR_READY if exist "%FT_SRPS%" exit /b 0
+del /f /q "%FT_SRPS%" >nul 2>&1
+set "FT_PS=$t=[IO.File]::ReadAllText($env:FT_SELF,[Text.Encoding]::UTF8); $i=$t.LastIndexOf('#SR_'+'BEGIN'); $j=$t.LastIndexOf('#SR_'+'END'); if($i -lt 0 -or $j -le $i){exit 2}; $b=$t.Substring($i+9,$j-$i-9); [IO.File]::WriteAllText($env:FT_SRPS,$b,(New-Object Text.UTF8Encoding $true))"
 call :psx
-call :pause
-goto :Diagnostics
+if not exist "%FT_SRPS%" exit /b 1
+set "SR_READY=1"
+exit /b 0
 
-:DIAG_RESOURCE_MONITOR
-call :header "RESOURCE MONITOR"
-start "" resmon.exe
-call :pause
-goto :Diagnostics
+rem --- Runs one System Reports mode (%~1) in its own PowerShell window, then offers to open a report if one was saved ---
+:sr_run
+call :sr_prepare
+if errorlevel 1 (
+    call :err "Could not prepare the System Reports engine."
+    call :pause
+    exit /b 1
+)
+set "FT_LOGDIR=%LOGDIR%"
+set "FT_LOGFILE=%LOGFILE%"
+del /f /q "%SR_DIR%\last_report.txt" >nul 2>&1
+call :log "System Reports - %~1 started"
+start "MeshalFix System Reports" /wait powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%FT_SRPS%" -Mode %~1
+set "SR_RC=%errorlevel%"
+call :log "System Reports - %~1 closed, exit code !SR_RC!"
+if exist "%SR_DIR%\last_report.txt" (
+    call :sr_open_prompt
+) else if "!SR_RC!"=="1" (
+    call :err "The diagnostic stopped with an error, or the report could not be saved. Details are in the log: !LOGFILE!"
+    call :pause
+)
+exit /b 0
 
-:DIAG_TASK_MANAGER
-call :header "TASK MANAGER"
-start "" taskmgr.exe
+rem --- A report file was written by the engine: show where, then ask whether to open it ---
+:sr_open_prompt
+call :header "HTML REPORT"
+setlocal DisableDelayedExpansion
+set "SR_RPT="
+for /f "usebackq delims=" %%L in ("%SR_DIR%\last_report.txt") do set "SR_RPT=%%L"
+endlocal & set "SR_REPORT=%SR_RPT%"
+if not defined SR_REPORT (
+    call :err "The report path could not be read, so the report will not be opened."
+    call :pause
+    exit /b 1
+)
+if not exist "!SR_REPORT!" (
+    call :err "The report file was not found on disk, so it will not be opened."
+    call :pause
+    exit /b 1
+)
+call :ok "HTML report saved:"
+echo     !SR_REPORT!
+call :log "HTML report saved: !SR_REPORT!"
+echo.
+:sr_open_ask
+set "SR_ANS="
+set /p "SR_ANS=  Diagnostics completed. Would you like to open the HTML report in your browser? [Y/N] "
+if /i "!SR_ANS!"=="Y" goto :sr_open_go
+if /i "!SR_ANS!"=="N" (
+    call :info "The report was not opened. It stays in the logs folder."
+    call :pause
+    exit /b 0
+)
+call :info "Please enter Y or N."
+goto :sr_open_ask
+:sr_open_go
+call :info "Asking Windows to open the report in your default browser..."
+start "" "!SR_REPORT!"
+if errorlevel 1 (
+    call :warn "Windows reported a problem starting the browser. Open the file manually from the path shown above."
+) else (
+    call :info "The open request was sent to Windows. If nothing opens, open the file manually from the path shown above."
+)
 call :pause
-goto :Diagnostics
-
-:DIAG_PERFMON
-call :header "PERFORMANCE MONITOR"
-start "" perfmon.exe
-call :pause
-goto :Diagnostics
+exit /b 0
 
 
 
@@ -3175,6 +3296,64 @@ if defined FT_SHOW type "%FT_OUT%"
 set "FT_SHOW="
 exit /b %FT_RC%
 
+rem --- Extracts the progress-bar runner (block #RN_BEGIN at the end of this file) into a temp .ps1 ---
+:runner_prep
+set "FT_SELF=%SCRIPT%"
+set "FT_RNPS=%TEMP%\FixToolkit_runner.ps1"
+if defined RN_READY if exist "%FT_RNPS%" exit /b
+del /f /q "%FT_RNPS%" >nul 2>&1
+set "FT_PS=$t=[IO.File]::ReadAllText($env:FT_SELF,[Text.Encoding]::UTF8); $i=$t.LastIndexOf('#RN_'+'BEGIN'); $j=$t.LastIndexOf('#RN_'+'END'); if($i -lt 0 -or $j -le $i){exit 2}; $b=$t.Substring($i+9,$j-$i-9); [IO.File]::WriteAllText($env:FT_RNPS,$b,(New-Object Text.UTF8Encoding $true))"
+call :psx
+if exist "%FT_RNPS%" set "RN_READY=1"
+exit /b
+
+rem --- Runs a LONG command with a loading bar and a Cancel key (press C, then Y).
+rem --- Input : RUN_CMD = the command line; %~1 = title; %~2 = expected time; %~3 = what cancelling means.
+rem --- Result: errorlevel and RL_RC = exit code of the command (1223 = cancelled by the user);
+rem ---         RUN_CANCELLED = 1 when the user cancelled, otherwise 0. The command output is printed afterwards.
+:run_long
+set "RUN_CANCELLED=0"
+set "RL_RC=1"
+set "RL_SAVE_PS=!FT_PS!"
+call :runner_prep
+set "FT_PS=!RL_SAVE_PS!"
+set "RL_SAVE_PS="
+set "FT_RUN_TITLE=%~1"
+set "FT_RUN_HINT=%~2"
+set "FT_RUN_WARN=%~3"
+set "FT_RUN_CMD=!RUN_CMD!"
+set "FT_RUN_OUT=%TEMP%\FixToolkit_run_out.txt"
+set "FT_RUN_RCFILE=%TEMP%\FixToolkit_run_rc.txt"
+set "FT_RUN_LOGFILE=%LOGFILE%"
+del /f /q "%FT_RUN_OUT%" "%FT_RUN_RCFILE%" >nul 2>&1
+call :log "RUN - %~1"
+if not exist "%FT_RNPS%" (
+    rem --- runner could not be prepared: run the command the old way (no bar, no cancel) ---
+    call :warn "Loading bar is not available - running without it."
+    if "!FT_RUN_PSMODE!"=="1" (
+        set "FT_SHOW=1"
+        call :psx
+        set "RL_RC=!errorlevel!"
+    ) else (
+        cmd /d /s /c "!RUN_CMD!"
+        set "RL_RC=!errorlevel!"
+    )
+) else (
+    start "MeshalFix progress" /wait powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%FT_RNPS%"
+    if exist "%FT_RUN_RCFILE%" set /p RL_RC=<"%FT_RUN_RCFILE%"
+    if exist "%FT_RUN_OUT%" type "%FT_RUN_OUT%"
+)
+if "!RL_RC!"=="1223" set "RUN_CANCELLED=1"
+if "!RUN_CANCELLED!"=="1" call :warn "Cancelled by you - the task was stopped."
+set "RUN_CMD="
+set "FT_RUN_TITLE="
+set "FT_RUN_HINT="
+set "FT_RUN_WARN="
+set "FT_RUN_CMD="
+set "FT_RUN_PSMODE="
+set "FT_RUN_RAW="
+exit /b !RL_RC!
+
 rem --- Downloads a file. %~1 = NAME of a variable that holds the URL, %~2 = destination file.
 rem --- Uses curl.exe (built into Windows 10/11) and falls back to PowerShell.
 :download
@@ -3183,11 +3362,16 @@ del /f /q "%~2" >nul 2>&1
 where curl.exe >nul 2>&1
 if not errorlevel 1 (
     if defined DL_REF (
-        curl.exe -L --fail --retry 3 --connect-timeout 20 -A "Mozilla/5.0" -e "!DL_REF!" -# -o "%~2" "!DL_URL!"
+        set "RUN_CMD=curl.exe -L --fail --retry 3 --connect-timeout 20 -A "Mozilla/5.0" -e "!DL_REF!" -# -o "%~2" "!DL_URL!""
     ) else (
-        curl.exe -L --fail --retry 3 --connect-timeout 20 -A "Mozilla/5.0" -# -o "%~2" "!DL_URL!"
+        set "RUN_CMD=curl.exe -L --fail --retry 3 --connect-timeout 20 -A "Mozilla/5.0" -# -o "%~2" "!DL_URL!""
     )
-    if not errorlevel 1 exit /b 0
+    call :run_long "Downloading" "depends on your internet speed" "The download stops and the file is not saved. You can start it again later."
+    if "!RUN_CANCELLED!"=="1" (
+        del /f /q "%~2" >nul 2>&1
+        exit /b 1223
+    )
+    if "!RL_RC!"=="0" exit /b 0
     call :warn "curl could not download the file. Trying PowerShell..."
 )
 set "FT_PS=$ProgressPreference='SilentlyContinue'; try { Invoke-WebRequest -UseBasicParsing -Uri '!DL_URL!' -OutFile '%~2' -UserAgent 'Mozilla/5.0' -ErrorAction Stop; exit 0 } catch { Write-Host $_.Exception.Message; exit 1 }"
@@ -5327,6 +5511,2464 @@ try {
 }
 exit 0
 #GD_END
+#SR_BEGIN
+# ====================================================================
+#  MeshalFix System Reports engine. Started only by System Reports (main menu option 9).
+#  Modes: Health, Errors, Crash, Recent, Reliability, Gaming, Report
+#  READ-ONLY diagnostics: nothing is repaired, deleted, cleared or changed here.
+#  Results of the current toolkit session are kept as small JSON files in SR_DIR
+#  and the HTML report is built from them.
+#  Rules: missing data is never shown as a passed check. Observations, warnings,
+#  possible causes and confirmed findings are kept apart. ASCII only on purpose.
+# ====================================================================
+param([string]$Mode = 'Health')
+
+$ErrorActionPreference = 'Continue'
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
+try { [Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture } catch { }
+try { $Host.UI.RawUI.WindowTitle = 'MeshalFix - System Reports' } catch { }
+$Inv  = [Globalization.CultureInfo]::InvariantCulture
+$Utf8 = New-Object System.Text.UTF8Encoding $false
+
+$SessionDir = $env:SR_DIR
+if (-not $SessionDir) { $SessionDir = Join-Path $env:TEMP 'MeshalFix_Session' }
+if (-not (Test-Path -LiteralPath $SessionDir)) { New-Item -ItemType Directory -Path $SessionDir -Force | Out-Null }
+$LogDir = $env:FT_LOGDIR
+if (-not $LogDir) { $LogDir = Join-Path ([Environment]::GetFolderPath('Desktop')) 'MeshalFix_Logs' }
+if (-not (Test-Path -LiteralPath $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
+$ToolkitLog = $env:FT_LOGFILE
+$IsAdmin = $false
+try { $IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) } catch { }
+$script:ExitCode = 0
+$script:UserMask = $env:USERNAME
+
+# ------------------------------------------------------------ console helpers
+function Line([string]$t, [string]$c = 'Gray') { Write-Host $t -ForegroundColor $c }
+function Blank { Write-Host '' }
+function Log([string]$m) {
+    if ($ToolkitLog) {
+        try { Add-Content -LiteralPath $ToolkitLog -Value ('[' + (Get-Date).ToString('yyyy-MM-dd HH:mm:ss', $Inv) + '] SYSREPORTS - ' + $m) -ErrorAction SilentlyContinue } catch { }
+    }
+}
+function Get-ConWidth {
+    try { $w = $Host.UI.RawUI.WindowSize.Width; if ($w -ge 60) { return ($w - 2) } } catch { }
+    return 100
+}
+function Fit([string]$s, [int]$n) {
+    if ($null -eq $s) { return '' }
+    $s = ($s -replace '[\r\n\t]+', ' ').Trim()
+    if ($s.Length -gt $n) {
+        if ($n -gt 3) { return ($s.Substring(0, $n - 3) + '...') }
+        return $s.Substring(0, $n)
+    }
+    return $s
+}
+function OneLine([string]$s, [int]$n) {
+    if ([string]::IsNullOrWhiteSpace($s)) { return '' }
+    $first = ''
+    foreach ($ln in ($s -split '\r?\n')) { if (-not [string]::IsNullOrWhiteSpace($ln)) { $first = $ln.Trim(); break } }
+    return (Fit $first $n)
+}
+function Wrap-Text([string]$s, [int]$w, [int]$maxLines = 40) {
+    $out = New-Object System.Collections.ArrayList
+    if ([string]::IsNullOrEmpty($s)) { return @() }
+    foreach ($ln in ($s -split '\r?\n')) {
+        $ln = $ln.TrimEnd()
+        if ($ln.Length -eq 0) { [void]$out.Add(''); continue }
+        while ($ln.Length -gt $w) {
+            $cut = $ln.LastIndexOf(' ', $w - 1)
+            if ($cut -lt 10) { $cut = $w }
+            [void]$out.Add($ln.Substring(0, $cut))
+            $ln = $ln.Substring($cut).TrimStart()
+        }
+        [void]$out.Add($ln)
+        if ($out.Count -ge $maxLines) { [void]$out.Add('...[more text not shown]'); break }
+    }
+    return @($out)
+}
+function Head([string]$t) {
+    try { Clear-Host } catch { }
+    Line ('  MESHAL FIX  -  ' + $t) 'Yellow'
+    Line ('  ' + (Get-Date).ToString('yyyy-MM-dd HH:mm:ss', $Inv) + '   Read-only diagnostics') 'DarkGray'
+    Line ('  ' + ('-' * 72)) 'DarkYellow'
+}
+function Ask-YN([string]$q) {
+    while ($true) {
+        $a = Read-Host ($q + ' [Y/N]')
+        if ($null -eq $a) { return $false }
+        $a = $a.Trim()
+        if ($a -ieq 'Y') { return $true }
+        if ($a -ieq 'N') { return $false }
+        Line '  Please enter Y or N.' 'Yellow'
+    }
+}
+function Wait-Enter([string]$m = 'Press Enter to continue') { [void](Read-Host ('  ' + $m)) }
+
+# ------------------------------------------------------------ generic helpers
+function Fmt($d) {
+    if ($null -eq $d) { return '' }
+    try { return ([datetime]$d).ToString('yyyy-MM-dd HH:mm:ss', $Inv) } catch { return [string]$d }
+}
+function SizeText($b) {
+    if ($null -eq $b) { return 'n/a' }
+    try { $v = [double]$b } catch { return 'n/a' }
+    if ($v -ge 1TB) { return ('{0:N2} TB' -f ($v / 1TB)) }
+    if ($v -ge 1GB) { return ('{0:N1} GB' -f ($v / 1GB)) }
+    if ($v -ge 1MB) { return ('{0:N1} MB' -f ($v / 1MB)) }
+    if ($v -ge 1KB) { return ('{0:N0} KB' -f ($v / 1KB)) }
+    return ([string][int64]$v + ' B')
+}
+function LevelName([int]$l) {
+    switch ($l) { 1 { return 'Critical' } 2 { return 'Error' } 3 { return 'Warning' } 4 { return 'Information' } 5 { return 'Verbose' } default { return 'LogAlways' } }
+}
+function LevelColor([int]$l) {
+    switch ($l) { 1 { return 'Red' } 2 { return 'Red' } 3 { return 'Yellow' } default { return 'Gray' } }
+}
+function StatusText([string]$s) {
+    switch ($s) { 'PASSED' { return 'Passed' } 'ISSUE' { return 'Issue detected' } 'WARNING' { return 'Warning' } 'NOTCHECKED' { return 'Not checked' } 'UNKNOWN' { return 'Unable to determine' } default { return 'Info' } }
+}
+function StatusColor([string]$s) {
+    switch ($s) { 'PASSED' { return 'Green' } 'ISSUE' { return 'Red' } 'WARNING' { return 'Yellow' } 'NOTCHECKED' { return 'DarkGray' } 'UNKNOWN' { return 'Magenta' } default { return 'Cyan' } }
+}
+function SevRank([string]$s) {
+    switch ($s) { 'High' { return 3 } 'Medium' { return 2 } 'Low' { return 1 } default { return 0 } }
+}
+function Short([string]$s, [int]$n) { return (Fit $s $n) }
+
+# Masks user names in profile paths and anything that looks like a product key or secret (used for the HTML report)
+function Mask([string]$s) {
+    if ([string]::IsNullOrEmpty($s)) { return '' }
+    $r = $s
+    try {
+        if ($script:UserMask) { $r = [regex]::Replace($r, ('(?i)([\\/]Users[\\/])' + [regex]::Escape($script:UserMask) + '(?=[\\/]|$)'), '$1<user>') }
+        $r = [regex]::Replace($r, '\b[A-Z0-9]{5}(?:-[A-Z0-9]{5}){4}\b', '[redacted-key]')
+        $r = [regex]::Replace($r, '(?i)\b(password|passwd|pwd|token|secret|apikey)\s*[=:]\s*\S+', '$1=[redacted]')
+    } catch { }
+    return $r
+}
+# HTML-escapes any value (and strips control characters). Every dynamic value in the report goes through H.
+function Esc($s) {
+    if ($null -eq $s) { return '' }
+    $t = [string]$s
+    try { $t = [regex]::Replace($t, '[\x00-\x08\x0B\x0C\x0E-\x1F\uFFFE\uFFFF]', '') } catch { }
+    return [System.Net.WebUtility]::HtmlEncode((Mask $t))
+}
+
+function Save-Session([string]$name, $obj) {
+    try {
+        $json = ConvertTo-Json -InputObject $obj -Depth 8
+        [IO.File]::WriteAllText((Join-Path $SessionDir ($name + '.json')), $json, $Utf8)
+        return $true
+    } catch {
+        Log ('Could not save session data ' + $name + ': ' + $_.Exception.Message)
+        return $false
+    }
+}
+function Load-Session([string]$name) {
+    $p = Join-Path $SessionDir ($name + '.json')
+    if (-not (Test-Path -LiteralPath $p)) { return $null }
+    try { return (ConvertFrom-Json ([IO.File]::ReadAllText($p, [Text.Encoding]::UTF8))) }
+    catch { Log ('Could not read session data ' + $name + ': ' + $_.Exception.Message); return $null }
+}
+
+function New-Finding([string]$Area, [string]$Title, [string]$Status, [string]$Severity, $Evidence, [string]$Next, [string]$Kind = 'Observation') {
+    return [pscustomobject]@{
+        Area = $Area; Title = $Title; Status = $Status; Severity = $Severity
+        Evidence = @($Evidence | Where-Object { $_ })
+        Next = $Next; Kind = $Kind
+    }
+}
+
+# ------------------------------------------------------------ reference tables
+# Windows exception (NTSTATUS) codes that appear in Application Error events
+$ExcMap = @{
+    'c0000005' = 'Access violation (the program touched memory it was not allowed to use)'
+    'c0000409' = 'Stack buffer overrun / fast-fail (the program stopped itself after detecting corruption)'
+    'c0000374' = 'Heap corruption detected'
+    'c000001d' = 'Illegal instruction'
+    'c0000094' = 'Integer divide by zero'
+    'c00000fd' = 'Stack overflow'
+    'c0000135' = 'A required DLL was not found (STATUS_DLL_NOT_FOUND)'
+    'c000007b' = 'Invalid image format, often a 32-bit / 64-bit mismatch (STATUS_INVALID_IMAGE_FORMAT)'
+    'c0000142' = 'A DLL failed to initialize (STATUS_DLL_INIT_FAILED)'
+    'c0000006' = 'In-page error (data could not be read from disk or a mapped file)'
+    'c0000417' = 'Invalid parameter passed to the C runtime'
+    '80000003' = 'Breakpoint exception'
+    'e0434352' = '.NET (CLR) unhandled exception'
+    'e06d7363' = 'C++ exception that was not caught'
+}
+# Bugcheck (stop) codes, keyed by lowercase hex without leading zeros. Value = NAME|cautious hint
+$BugMap = @{
+    '1a'  = 'MEMORY_MANAGEMENT|Memory management failure. Often associated with RAM or driver problems; the code alone does not identify the cause.'
+    '24'  = 'NTFS_FILE_SYSTEM|File system (NTFS) failure. Can involve the drive, its connection or a driver.'
+    '3b'  = 'SYSTEM_SERVICE_EXCEPTION|Exception while running a system service. Frequently involves a driver.'
+    '4e'  = 'PFN_LIST_CORRUPT|Memory page list corruption. Often associated with a driver or memory fault.'
+    '50'  = 'PAGE_FAULT_IN_NONPAGED_AREA|Invalid memory reference. Can involve drivers, RAM or storage software.'
+    '51'  = 'REGISTRY_ERROR|Registry I/O problem.'
+    '7a'  = 'KERNEL_DATA_INPAGE_ERROR|Windows could not read paged kernel data. Can involve storage, cabling or memory.'
+    '7b'  = 'INACCESSIBLE_BOOT_DEVICE|Windows could not access the boot volume during startup.'
+    '7e'  = 'SYSTEM_THREAD_EXCEPTION_NOT_HANDLED|A system thread raised an unhandled exception, often in a driver.'
+    '7f'  = 'UNEXPECTED_KERNEL_MODE_TRAP|Unexpected processor trap. Can involve hardware, overclocking or drivers.'
+    '8e'  = 'KERNEL_MODE_EXCEPTION_NOT_HANDLED|Kernel-mode exception that was not handled.'
+    '9c'  = 'MACHINE_CHECK_EXCEPTION|Hardware reported a fatal machine check.'
+    '9f'  = 'DRIVER_POWER_STATE_FAILURE|A driver did not handle a power transition in time (sleep, wake, shutdown).'
+    'a'   = 'IRQL_NOT_LESS_OR_EQUAL|Invalid memory access at a high interrupt level. Frequently involves a driver.'
+    'be'  = 'ATTEMPTED_WRITE_TO_READONLY_MEMORY|A driver tried to write to read-only memory.'
+    'c2'  = 'BAD_POOL_CALLER|Invalid memory pool request, usually from a driver.'
+    'c4'  = 'DRIVER_VERIFIER_DETECTED_VIOLATION|Driver Verifier detected a violation.'
+    'c5'  = 'DRIVER_CORRUPTED_EXPOOL|Memory pool corruption, usually involving a driver.'
+    'd1'  = 'DRIVER_IRQL_NOT_LESS_OR_EQUAL|A driver accessed invalid memory at a high interrupt level.'
+    'ef'  = 'CRITICAL_PROCESS_DIED|A critical Windows process ended unexpectedly.'
+    'f4'  = 'CRITICAL_OBJECT_TERMINATION|A critical system process or thread ended unexpectedly.'
+    '101' = 'CLOCK_WATCHDOG_TIMEOUT|A processor did not respond in time. Can involve hardware, firmware or overclocking.'
+    '109' = 'CRITICAL_STRUCTURE_CORRUPTION|Corruption of a protected kernel structure was detected.'
+    '116' = 'VIDEO_TDR_FAILURE|The graphics driver could not recover from a timeout. Commonly associated with the graphics driver or GPU; not a confirmed GPU fault.'
+    '117' = 'VIDEO_TDR_TIMEOUT_DETECTED|The graphics driver did not respond in time. Commonly associated with the graphics driver or GPU.'
+    '119' = 'VIDEO_SCHEDULER_INTERNAL_ERROR|The video scheduler detected a fatal violation. Commonly associated with the graphics driver or GPU.'
+    '124' = 'WHEA_UNCORRECTABLE_ERROR|The hardware error architecture reported an uncorrectable hardware error (CPU, memory, PCIe, and similar).'
+    '133' = 'DPC_WATCHDOG_VIOLATION|A driver or firmware routine ran too long. Often associated with drivers or storage firmware.'
+    '139' = 'KERNEL_SECURITY_CHECK_FAILURE|A kernel integrity check failed, often caused by a driver.'
+    '13a' = 'KERNEL_MODE_HEAP_CORRUPTION|Kernel heap corruption, usually from a driver.'
+    '141' = 'VIDEO_ENGINE_TIMEOUT_DETECTED|The graphics engine timed out. Commonly associated with the graphics driver or GPU.'
+    '154' = 'UNEXPECTED_STORE_EXCEPTION|A storage component raised an unexpected exception. Can involve the drive or its driver.'
+    'c000021a' = 'STATUS_SYSTEM_PROCESS_TERMINATED|A critical user-mode system process ended unexpectedly.'
+}
+function Norm-Hex($v) {
+    # returns lowercase hex without 0x and leading zeros, or '' when the value is not a number
+    if ($null -eq $v) { return '' }
+    $t = ([string]$v).Trim()
+    if ($t -match '^0x([0-9a-fA-F]{1,16})$') { $t = $Matches[1] }
+    elseif ($t -match '^[0-9a-fA-F]{1,16}$') { }
+    else { return '' }
+    $t = $t.ToLowerInvariant().TrimStart('0')
+    if ($t -eq '') { $t = '0' }
+    return $t
+}
+function Bug-Info([string]$hex) {
+    $k = Norm-Hex $hex
+    if ($k -ne '' -and $BugMap.ContainsKey($k)) {
+        $p = $BugMap[$k].Split('|', 2)
+        return [pscustomobject]@{ Name = $p[0]; Hint = $p[1] }
+    }
+    return [pscustomobject]@{ Name = ''; Hint = '' }
+}
+
+# Known events. Text is intentionally cautious: what the event records, possible causes (not confirmed), next steps.
+$KB = @{}
+function Add-KB([string]$prov, [string]$id, [string]$title, [string]$means, [string]$causes, [string]$next, [string]$cls) {
+    $KB[($prov + '|' + $id).ToLowerInvariant()] = [pscustomobject]@{ Title = $title; Means = $means; Causes = $causes; Next = $next; Class = $cls }
+}
+function Find-KB([string]$prov, $id) {
+    $k = (($prov + '|' + [string]$id)).ToLowerInvariant()
+    if ($KB.ContainsKey($k)) { return $KB[$k] }
+    $k2 = ($prov + '|*').ToLowerInvariant()
+    if ($KB.ContainsKey($k2)) { return $KB[$k2] }
+    return $null
+}
+Add-KB 'Microsoft-Windows-Kernel-Power' '41' 'Unexpected restart (Kernel-Power 41)' 'Windows recorded that the system restarted without shutting down cleanly first. The event records that the restart happened, not why.' 'Possible causes include loss of power, a hard reset or power-button press during a freeze, protective shutdown from overheating, a system crash (bugcheck), or unstable hardware or drivers. The event alone does not tell which.' 'Check for a BugCheck event or dump file around the same time (Crash and BSOD Analyzer). If the bugcheck code in the event is 0 and nothing else was recorded, consider power supply, temperatures and whether the PC froze before the restart.' 'restart'
+Add-KB 'EventLog' '6008' 'Previous shutdown was unexpected (EventLog 6008)' 'At startup the Event Log service recorded that the previous shutdown was not clean.' 'The same possible causes as Kernel-Power 41: power loss, hard reset, freeze or a crash. This event does not identify which.' 'Compare with Kernel-Power 41 and any BugCheck event in the Crash and BSOD Analyzer.' 'restart'
+Add-KB 'Microsoft-Windows-WER-SystemErrorReporting' '1001' 'Restart after a bugcheck (BSOD)' 'Windows recorded that the computer restarted after a bugcheck (stop error) and lists the stop code, its parameters and often a dump file path.' 'The stop code names the kind of failure. The underlying cause is often a driver, hardware or memory problem, but the code alone rarely identifies it.' 'Open the Crash and BSOD Analyzer for details. Finding the faulting driver requires analyzing the dump file with a debugger such as WinDbg.' 'restart'
+Add-KB 'BugCheck' '1001' 'Restart after a bugcheck (BSOD)' 'Windows recorded that the computer restarted after a bugcheck (stop error) and lists the stop code, its parameters and often a dump file path.' 'The stop code names the kind of failure. The underlying cause is often a driver, hardware or memory problem, but the code alone rarely identifies it.' 'Open the Crash and BSOD Analyzer for details. Finding the faulting driver requires analyzing the dump file with a debugger such as WinDbg.' 'restart'
+Add-KB 'User32' '1074' 'Shutdown or restart was requested (User32 1074)' 'A process or user asked Windows to shut down or restart. This is normally an expected, planned action.' 'Updates, installers, the Start menu or an application can request this.' 'No action needed unless a restart was not expected.' 'info'
+foreach ($sid in @('7000','7001','7009','7011','7023','7024','7026','7031','7034')) {
+    $stitle = 'Service problem (Service Control Manager ' + $sid + ')'
+    switch ($sid) {
+        '7000' { $stitle = 'A service failed to start (7000)' }
+        '7001' { $stitle = 'A service failed because a dependency did not start (7001)' }
+        '7009' { $stitle = 'A service did not respond in time while starting (7009)' }
+        '7011' { $stitle = 'Timeout waiting for a service to respond (7011)' }
+        '7023' { $stitle = 'A service ended with an error (7023)' }
+        '7024' { $stitle = 'A service ended with a service-specific error (7024)' }
+        '7026' { $stitle = 'A boot-start or system-start driver failed to load (7026)' }
+        '7031' { $stitle = 'A service ended unexpectedly, recovery action configured (7031)' }
+        '7034' { $stitle = 'A service ended unexpectedly (7034)' }
+    }
+    Add-KB 'Service Control Manager' $sid $stitle 'The Service Control Manager reported a problem with the service or driver named in the event message.' 'Possible causes include a disabled or failed dependency, missing or damaged files, permissions, or a conflict. Many services are optional, so a single failure of a rarely used service is often harmless.' 'Read the service name and error text in the event details and decide whether that service matters for your use. Repeated failures of an important service deserve a closer look.' 'service'
+}
+Add-KB 'Microsoft-Windows-DistributedCOM' '10016' 'DCOM permission message (10016)' 'A program asked to activate a COM component and the security settings did not allow it for that account.' 'This message is frequently logged on working Windows installations and is often harmless.' 'No action is usually needed unless a specific feature is failing. Do not change DCOM permissions without a clear reason.' 'noise'
+Add-KB 'Application Error' '1000' 'Application crash (Application Error 1000)' 'A program stopped working. The event lists the program, the faulting module and the exception code.' 'The faulting module shows where the crash happened, not necessarily its cause. Causes range from program bugs to driver, overlay, memory or file problems.' 'Compare the module and exception code across crashes. Repeated identical crashes point to the same problem; update or reinstall the program, and check for related driver issues.' 'app'
+Add-KB 'Application Hang' '1002' 'Application stopped responding (Application Hang 1002)' 'A program stopped responding and was closed.' 'A busy or blocked program, a slow disk or network resource, or a driver problem can cause hangs.' 'Check whether it repeats with the same program. Update the program and look for slow storage or network resources.' 'app'
+Add-KB '.NET Runtime' '1026' '.NET application crashed (.NET Runtime 1026)' 'A .NET program ended because of an unhandled exception. The message normally includes the exception type and stack trace.' 'Mostly a problem in the program itself or in its configuration or data.' 'Read the exception text in the details. Updating or reinstalling the program is the usual next step.' 'app'
+Add-KB 'Windows Error Reporting' '1001' 'Windows Error Reporting record (1001)' 'Windows Error Reporting recorded a problem report. It adds technical details to another crash or failure.' 'This is a supporting record, not a separate problem.' 'Read it together with the Application Error or BugCheck event close to the same time.' 'info'
+Add-KB 'Display' '4101' 'Display driver stopped responding and recovered (Display 4101)' 'Windows detected that the display driver did not respond in time, reset it and recovered.' 'Possible causes include a graphics driver problem, a heavy GPU workload, overheating, overclocking, unstable GPU hardware or conflicting overlay software. A single event is not proof of failing hardware.' 'If it repeats, update or cleanly reinstall the graphics driver from the GPU vendor, check temperatures and remove GPU overclocks.' 'display'
+Add-KB 'nvlddmkm' '*' 'Message from the NVIDIA display driver' 'The NVIDIA kernel driver logged this event. The message text is the only evidence of what happened.' 'A single driver message does not prove GPU failure. Repeated messages together with crashes or display resets are more significant.' 'Note the time and what you were doing. If it repeats, update or cleanly reinstall the graphics driver.' 'display'
+Add-KB 'amdkmdag' '*' 'Message from the AMD display driver' 'The AMD kernel driver logged this event. The message text is the only evidence of what happened.' 'A single driver message does not prove GPU failure. Repeated messages together with crashes or display resets are more significant.' 'Note the time and what you were doing. If it repeats, update or cleanly reinstall the graphics driver.' 'display'
+Add-KB 'disk' '7' 'Bad block reported on a disk (disk 7)' 'The disk driver reported a bad block on the device named in the message.' 'Possible causes include damaged storage media, but also cable, controller or driver problems.' 'Back up important data, then check the drive with the manufacturer tool and review its SMART data.' 'storage'
+Add-KB 'disk' '11' 'Disk controller error (disk 11)' 'The disk driver detected a controller error on the device named in the message.' 'Possible causes include the drive, its cable or connection, the controller or the driver.' 'Back up important data and check the connection and drive health.' 'storage'
+Add-KB 'disk' '51' 'Error during a paging operation (disk 51)' 'Windows detected an error on a device while reading or writing virtual memory.' 'Possible causes include the drive, its connection, the controller or the driver.' 'Back up important data and check drive health. A single event may be a transient condition.' 'storage'
+Add-KB 'disk' '153' 'Disk I/O operation was retried (disk 153)' 'An I/O operation had to be retried.' 'Possible causes include a failing drive, a loose connection or a driver or controller problem.' 'Check whether it repeats. If it does, back up data and check drive health.' 'storage'
+Add-KB 'Ntfs' '55' 'File system corruption found (Ntfs 55)' 'NTFS reported a corruption in the file system structure of the volume named in the message.' 'Possible causes include an unclean shutdown, a failing drive or connection, or a driver problem.' 'Back up important data. A read-only check is available in the System Repair menu; repairs there ask for your confirmation first.' 'storage'
+Add-KB 'Microsoft-Windows-Ntfs' '55' 'File system corruption found (Ntfs 55)' 'NTFS reported a corruption in the file system structure of the volume named in the message.' 'Possible causes include an unclean shutdown, a failing drive or connection, or a driver problem.' 'Back up important data. A read-only check is available in the System Repair menu; repairs there ask for your confirmation first.' 'storage'
+Add-KB 'Microsoft-Windows-WHEA-Logger' '*' 'Hardware error reported by Windows (WHEA)' 'The Windows Hardware Error Architecture reported a hardware-level error, for example from the processor, memory or a PCIe device.' 'Corrected errors can be harmless in isolation. Recurring or uncorrectable errors can indicate hardware, firmware, overclocking or power problems.' 'Check whether it repeats. Review the details in the event, remove overclocks and update BIOS and chipset drivers.' 'hardware'
+Add-KB 'Microsoft-Windows-WindowsUpdateClient' '20' 'Windows Update installation failure (20)' 'Windows Update reported that an update failed to install. The message contains the update and an error code.' 'Many causes are possible, including servicing problems, disk space or conflicting software.' 'Note the error code in the message. The Windows Update fixes in the System Repair menu can help; they ask for confirmation first.' 'update'
+Add-KB 'Microsoft-Windows-Kernel-PnP' '219' 'A driver failed to load for a device (Kernel-PnP 219)' 'Plug and Play could not load the driver for the device named in the message.' 'Possible causes include a missing or incompatible driver, or a device that is no longer connected.' 'Identify the device in the message and update or reinstall its driver if the device matters to you.' 'driver'
+Add-KB 'Microsoft-Windows-Resource-Exhaustion-Detector' '2004' 'Low virtual memory was diagnosed (2004)' 'Windows reported that the system ran low on virtual memory (RAM plus page file) and lists the largest memory users.' 'A memory-hungry program, a memory leak or a small page file can cause this.' 'Check the programs named in the message and consider closing them or increasing the page file.' 'memory'
+
+function Get-ExcText([string]$code) {
+    $k = Norm-Hex $code
+    if ($k -ne '') { $k = $k.PadLeft(8, '0') }
+    if ($k -ne '' -and $ExcMap.ContainsKey($k)) { return $ExcMap[$k] }
+    return ''
+}
+function Show-Code([string]$code) {
+    $k = Norm-Hex $code
+    if ($k -eq '') { return $code }
+    return ('0x' + $k.PadLeft(8, '0').ToUpperInvariant())
+}
+
+# ------------------------------------------------------------ event retrieval
+# Reads events from one or more logs. A log that cannot be read is recorded in Problems
+# (so "no events" is never confused with "could not read"). Newest events come first.
+function Get-LogEvents {
+    param([string[]]$Logs, [datetime]$Since, [int[]]$Levels, [int[]]$Ids, [int]$Max = 1500)
+    $res = [pscustomobject]@{
+        Events  = (New-Object System.Collections.ArrayList)
+        Problems = (New-Object System.Collections.ArrayList)
+        Scanned = (New-Object System.Collections.ArrayList)
+        Limited = $false
+    }
+    foreach ($ln in $Logs) {
+        $flt = @{ LogName = $ln; StartTime = $Since }
+        if ($Levels -and $Levels.Count -gt 0) { $flt['Level'] = $Levels }
+        if ($Ids -and $Ids.Count -gt 0) { $flt['Id'] = $Ids }
+        $got = @()
+        try {
+            $got = @(Get-WinEvent -FilterHashtable $flt -MaxEvents $Max -ErrorAction Stop)
+            [void]$res.Scanned.Add($ln)
+        } catch {
+            $fq = [string]$_.FullyQualifiedErrorId
+            if ($fq -like 'NoMatchingEventsFound*') {
+                [void]$res.Scanned.Add($ln)
+                $got = @()
+            } else {
+                $why = [string]$_.Exception.Message
+                if ($_.Exception -is [System.UnauthorizedAccessException]) { $why = 'Access denied. ' + $why }
+                [void]$res.Problems.Add(($ln + ': ' + (Fit $why 180)))
+                Log ('Event log read problem for ' + $ln + ': ' + $why)
+                $got = @()
+            }
+        }
+        if ($got.Count -ge $Max) { $res.Limited = $true }
+        foreach ($e in $got) {
+            $t = $null
+            try { $t = $e.TimeCreated } catch { }
+            if ($null -eq $t) { $t = [datetime]::MinValue }
+            $lv = 0
+            try { if ($null -ne $e.Level) { $lv = [int]$e.Level } } catch { }
+            $o = [pscustomobject]@{
+                Time = $t; Log = $ln; Provider = [string]$e.ProviderName; Id = [int]$e.Id
+                Level = $lv; RecordId = $e.RecordId; Raw = $e
+            }
+            [void]$res.Events.Add($o)
+        }
+    }
+    return $res
+}
+
+function Get-EvMessage($e, [int]$max = 3000) {
+    $m = $null
+    try { $m = $e.Message } catch { }
+    if ([string]::IsNullOrWhiteSpace($m)) {
+        try {
+            $vals = @($e.Properties | ForEach-Object { [string]$_.Value })
+            if ($vals.Count -gt 0) { $m = '(message text not available - raw event data) ' + ($vals -join ' | ') }
+        } catch { }
+    }
+    if ([string]::IsNullOrWhiteSpace($m)) { $m = '(no message text or data available for this event)' }
+    $m = ([string]$m).Replace([string][char]0, '')
+    if ($m.Length -gt $max) { $m = $m.Substring(0, $max) + ' ...[truncated]' }
+    return $m
+}
+
+# Returns @{ List = ordered data values; Named = name->value } for an event, from its XML (language independent)
+function Get-EvData($e) {
+    $list = New-Object System.Collections.ArrayList
+    $named = @{}
+    try {
+        $x = New-Object System.Xml.XmlDocument
+        $x.LoadXml([string]$e.ToXml())
+        $ns = New-Object System.Xml.XmlNamespaceManager($x.NameTable)
+        $ns.AddNamespace('e', 'http://schemas.microsoft.com/win/2004/08/events/event')
+        $nodes = $x.SelectNodes('//e:EventData/e:Data', $ns)
+        foreach ($n in $nodes) {
+            $v = [string]$n.InnerText
+            [void]$list.Add($v)
+            $nm = [string]$n.GetAttribute('Name')
+            if ($nm) { $named[$nm] = $v }
+        }
+    } catch { }
+    if ($list.Count -eq 0) {
+        try { foreach ($p in $e.Properties) { [void]$list.Add([string]$p.Value) } } catch { }
+    }
+    return [pscustomobject]@{ List = $list; Named = $named }
+}
+
+# Groups similar events (same log, source, Event ID and level)
+function Group-Events($events) {
+    $map = @{}
+    foreach ($o in $events) {
+        $k = ($o.Log + '|' + $o.Provider + '|' + [string]$o.Id + '|' + [string]$o.Level)
+        if (-not $map.ContainsKey($k)) {
+            $map[$k] = [pscustomobject]@{
+                Key = $k; Log = $o.Log; Provider = $o.Provider; Id = $o.Id; Level = $o.Level
+                Cnt = 0; First = $o.Time; Last = $o.Time; Latest = $o
+                Items = (New-Object System.Collections.ArrayList); MsgCache = $null
+            }
+        }
+        $g = $map[$k]
+        $g.Cnt = $g.Cnt + 1
+        if ($o.Time -lt $g.First) { $g.First = $o.Time }
+        if ($o.Time -gt $g.Last) { $g.Last = $o.Time; $g.Latest = $o }
+        if ($g.Items.Count -lt 8) { [void]$g.Items.Add($o) }
+    }
+    $arr = @($map.Values)
+    return @($arr | Sort-Object @{ Expression = { if ($_.Level -eq 0) { 9 } else { $_.Level } }; Ascending = $true }, @{ Expression = { $_.Cnt }; Descending = $true }, @{ Expression = { $_.Last }; Descending = $true })
+}
+function Group-Msg($g) {
+    if ($null -eq $g.MsgCache) { $g.MsgCache = Get-EvMessage $g.Latest.Raw 3000 }
+    return $g.MsgCache
+}
+function Group-ToRecord($g) {
+    $kb = Find-KB $g.Provider $g.Id
+    $msg = Group-Msg $g
+    if ($msg.Length -gt 1500) { $msg = $msg.Substring(0, 1500) + ' ...[truncated]' }
+    $rec = [ordered]@{
+        Log = $g.Log; Provider = $g.Provider; Id = $g.Id; Level = (LevelName $g.Level)
+        Count = $g.Cnt; First = (Fmt $g.First); Last = (Fmt $g.Last); Message = $msg
+        Known = [bool]$kb; KbTitle = ''; KbMeans = ''; KbCauses = ''; KbNext = ''; KbClass = ''
+    }
+    if ($kb) { $rec.KbTitle = $kb.Title; $rec.KbMeans = $kb.Means; $rec.KbCauses = $kb.Causes; $rec.KbNext = $kb.Next; $rec.KbClass = $kb.Class }
+    return [pscustomobject]$rec
+}
+
+# One scan of System + Application. Used by Errors, Recent and Health.
+function Scan-Events([int]$hours, [bool]$withWarnings) {
+    $since = (Get-Date).AddHours(-1 * $hours)
+    $levels = @(1, 2)
+    if ($withWarnings) { $levels = @(1, 2, 3) }
+    $r = Get-LogEvents -Logs @('System', 'Application') -Since $since -Levels $levels -Max 1500
+    $groups = @(Group-Events $r.Events)
+    $nCrit = @($r.Events | Where-Object { $_.Level -eq 1 }).Count
+    $nErr  = @($r.Events | Where-Object { $_.Level -eq 2 }).Count
+    $nWarn = @($r.Events | Where-Object { $_.Level -eq 3 }).Count
+    return [pscustomobject]@{
+        Hours = $hours; Since = $since; Levels = $levels; WithWarnings = $withWarnings; Result = $r; Groups = $groups
+        Total = $r.Events.Count; Critical = $nCrit; Errors = $nErr; Warnings = $nWarn
+        Complete = ($r.Problems.Count -eq 0); Limited = [bool]$r.Limited; Time = (Get-Date)
+    }
+}
+function Save-EventSession([string]$name, $scan) {
+    $top = @($scan.Groups | Select-Object -First 60 | ForEach-Object { Group-ToRecord $_ })
+    $obj = [ordered]@{
+        Module = $name; Generated = (Fmt (Get-Date)); WindowHours = $scan.Hours
+        Levels = (@($scan.Levels | ForEach-Object { LevelName $_ }) -join ', ')
+        Logs = 'System, Application'; LogsRead = @($scan.Result.Scanned)
+        TotalEvents = $scan.Total; Critical = $scan.Critical; Errors = $scan.Errors; Warnings = $scan.Warnings
+        GroupCount = $scan.Groups.Count; Limited = $scan.Limited; Complete = $scan.Complete
+        Problems = @($scan.Result.Problems); Groups = $top
+    }
+    [void](Save-Session $name $obj)
+    Log ('Saved ' + $name + ': ' + $scan.Total + ' events, ' + $scan.Groups.Count + ' groups, complete=' + $scan.Complete)
+}
+
+# ------------------------------------------------------------ system summary
+function Get-SystemSummary {
+    $s = [ordered]@{ Collected = (Fmt (Get-Date)); Notes = @() }
+    $notes = New-Object System.Collections.ArrayList
+
+    $os = $null
+    try {
+        $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
+        $cv = $null
+        try { $cv = Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop } catch { }
+        $s.OS = [ordered]@{
+            Caption = [string]$os.Caption; Version = [string]$os.Version; Build = [string]$os.BuildNumber
+            Ubr = $(if ($cv) { [string]$cv.UBR } else { '' })
+            DisplayVersion = $(if ($cv) { [string]$cv.DisplayVersion } else { '' })
+            Edition = $(if ($cv) { [string]$cv.EditionID } else { '' })
+            Arch = [string]$os.OSArchitecture; InstallDate = (Fmt $os.InstallDate); LastBoot = (Fmt $os.LastBootUpTime)
+            TotalRamMB = [math]::Round([double]$os.TotalVisibleMemorySize / 1024); FreeRamMB = [math]::Round([double]$os.FreePhysicalMemory / 1024)
+        }
+    } catch { $s.OS = $null; [void]$notes.Add('Windows information: ' + (Fit $_.Exception.Message 120)) }
+
+    try {
+        $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction Stop
+        $cpus = @(Get-CimInstance -ClassName Win32_Processor -ErrorAction SilentlyContinue)
+        $bios = Get-CimInstance -ClassName Win32_BIOS -ErrorAction SilentlyContinue
+        $mods = @(Get-CimInstance -ClassName Win32_PhysicalMemory -ErrorAction SilentlyContinue)
+        $cpuName = ''
+        $cores = 0; $threads = 0
+        if ($cpus.Count -gt 0) {
+            $cpuName = ([string]$cpus[0].Name).Trim()
+            foreach ($c in $cpus) { $cores += [int]$c.NumberOfCores; $threads += [int]$c.NumberOfLogicalProcessors }
+        }
+        $speed = ''
+        if ($mods.Count -gt 0 -and $mods[0].Speed) { $speed = [string]$mods[0].Speed + ' MHz' }
+        $s.Hardware = [ordered]@{
+            Manufacturer = ([string]$cs.Manufacturer).Trim(); Model = ([string]$cs.Model).Trim()
+            Cpu = $cpuName; Cores = $cores; Threads = $threads
+            RamBytes = [double]$cs.TotalPhysicalMemory; RamModules = $mods.Count; RamSpeed = $speed
+            Bios = $(if ($bios) { ([string]$bios.SMBIOSBIOSVersion).Trim() + ' (' + (Fmt $bios.ReleaseDate) + ')' } else { '' })
+        }
+    } catch { $s.Hardware = $null; [void]$notes.Add('Hardware information: ' + (Fit $_.Exception.Message 120)) }
+
+    $gpus = New-Object System.Collections.ArrayList
+    try {
+        foreach ($v in @(Get-CimInstance -ClassName Win32_VideoController -ErrorAction Stop)) {
+            $drv = [string]$v.DriverVersion
+            $brand = ''
+            if (([string]$v.Name) -match 'NVIDIA' -and $drv -match '^\d+\.\d+\.(\d+)\.(\d+)$') {
+                $digits = ($Matches[1] + $Matches[2])
+                if ($digits.Length -ge 5) { $d5 = $digits.Substring($digits.Length - 5); $brand = ($d5.Substring(0, 3) + '.' + $d5.Substring(3)) }
+            }
+            $ec = 0
+            try { if ($null -ne $v.ConfigManagerErrorCode) { $ec = [int]$v.ConfigManagerErrorCode } } catch { }
+            [void]$gpus.Add([ordered]@{
+                Name = [string]$v.Name; Driver = $drv; DriverDate = (Fmt $v.DriverDate); NvidiaBranded = $brand
+                Status = [string]$v.Status; ErrorCode = $ec
+                Resolution = $(if ($v.CurrentHorizontalResolution) { [string]$v.CurrentHorizontalResolution + 'x' + [string]$v.CurrentVerticalResolution } else { '' })
+            })
+        }
+    } catch { [void]$notes.Add('Display adapters: ' + (Fit $_.Exception.Message 120)) }
+    $s.Gpus = @($gpus)
+
+    $vols = New-Object System.Collections.ArrayList
+    $volOk = $false
+    try {
+        foreach ($v in @(Get-Volume -ErrorAction Stop)) {
+            if ($v.DriveType -eq 'Fixed' -and $v.DriveLetter) {
+                [void]$vols.Add([ordered]@{
+                    Drive = ([string]$v.DriveLetter + ':'); Label = [string]$v.FileSystemLabel; Fs = [string]$v.FileSystem
+                    SizeBytes = [double]$v.Size; FreeBytes = [double]$v.SizeRemaining; Health = [string]$v.HealthStatus
+                })
+            }
+        }
+        $volOk = $true
+    } catch { }
+    if (-not $volOk) {
+        try {
+            foreach ($v in @(Get-CimInstance -ClassName Win32_LogicalDisk -Filter 'DriveType=3' -ErrorAction Stop)) {
+                [void]$vols.Add([ordered]@{
+                    Drive = [string]$v.DeviceID; Label = [string]$v.VolumeName; Fs = [string]$v.FileSystem
+                    SizeBytes = [double]$v.Size; FreeBytes = [double]$v.FreeSpace; Health = ''
+                })
+            }
+        } catch { [void]$notes.Add('Storage volumes: ' + (Fit $_.Exception.Message 120)) }
+    }
+    $s.Volumes = @($vols)
+
+    $disks = New-Object System.Collections.ArrayList
+    $diskNote = ''
+    try {
+        foreach ($d in @(Get-PhysicalDisk -ErrorAction Stop)) {
+            $rc = $null
+            try { $rc = $d | Get-StorageReliabilityCounter -ErrorAction Stop } catch { $rc = $null }
+            $row = [ordered]@{
+                Name = [string]$d.FriendlyName; Media = [string]$d.MediaType; Bus = [string]$d.BusType; SizeBytes = [double]$d.Size
+                Health = [string]$d.HealthStatus; Operational = (@($d.OperationalStatus) -join ', ')
+                Wear = $null; Temp = $null; PowerOnHours = $null; ReadErrUncorrected = $null; WriteErrUncorrected = $null
+            }
+            if ($rc) {
+                $row.Wear = $rc.Wear; $row.Temp = $rc.Temperature; $row.PowerOnHours = $rc.PowerOnHours
+                $row.ReadErrUncorrected = $rc.ReadErrorsUncorrected; $row.WriteErrUncorrected = $rc.WriteErrorsUncorrected
+            }
+            [void]$disks.Add($row)
+        }
+    } catch { $diskNote = (Fit $_.Exception.Message 140) }
+    $s.Disks = @($disks)
+    $s.DiskNote = $diskNote
+
+    $act = [ordered]@{ Known = $false; Status = ''; Text = ''; Detail = '' }
+    try {
+        $lic = Get-CimInstance -ClassName SoftwareLicensingProduct -Filter "ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL" -ErrorAction Stop | Select-Object -First 1
+        if ($lic) {
+            $code = [int]$lic.LicenseStatus
+            $act.Known = $true; $act.Status = [string]$code
+            switch ($code) {
+                0 { $act.Text = 'Unlicensed' }
+                1 { $act.Text = 'Licensed (activated)' }
+                2 { $act.Text = 'Initial grace period' }
+                3 { $act.Text = 'Additional grace period' }
+                4 { $act.Text = 'Non-genuine grace period' }
+                5 { $act.Text = 'Notification mode' }
+                6 { $act.Text = 'Extended grace period' }
+                default { $act.Text = 'Unrecognized status code ' + $code }
+            }
+            $act.Detail = [string]$lic.Description
+        }
+    } catch { }
+    $s.Activation = $act
+
+    $pend = New-Object System.Collections.ArrayList
+    try { if (Test-Path -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') { [void]$pend.Add('Component servicing is waiting for a restart') } } catch { }
+    try { if (Test-Path -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired') { [void]$pend.Add('Windows Update is waiting for a restart') } } catch { }
+    try {
+        $pf = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction Stop).PendingFileRenameOperations
+        if ($pf) { [void]$pend.Add('Pending file rename operations exist (often left by installers)') }
+    } catch { }
+    $s.PendingReboot = @($pend)
+    $s.Notes = @($notes)
+    return $s
+}
+
+# ------------------------------------------------------------ crash data
+function Get-DumpFiles {
+    $items = New-Object System.Collections.ArrayList
+    $problems = New-Object System.Collections.ArrayList
+    $specs = @(
+        @{ Dir = (Join-Path $env:SystemRoot 'Minidump'); Filter = '*.dmp'; Kind = 'Kernel minidump'; Recurse = $false },
+        @{ Dir = $env:SystemRoot; Filter = 'MEMORY.DMP'; Kind = 'Kernel or complete memory dump'; Recurse = $false },
+        @{ Dir = (Join-Path $env:SystemRoot 'LiveKernelReports'); Filter = '*.dmp'; Kind = 'Live kernel report'; Recurse = $true },
+        @{ Dir = (Join-Path $env:LOCALAPPDATA 'CrashDumps'); Filter = '*.dmp'; Kind = 'User-mode crash dump (current user)'; Recurse = $false }
+    )
+    foreach ($sp in $specs) {
+        if (-not (Test-Path -LiteralPath $sp.Dir)) { continue }
+        try {
+            $files = @()
+            if ($sp.Recurse) { $files = @(Get-ChildItem -LiteralPath $sp.Dir -Filter $sp.Filter -File -Recurse -Force -ErrorAction Stop | Sort-Object LastWriteTime -Descending | Select-Object -First 40) }
+            else { $files = @(Get-ChildItem -LiteralPath $sp.Dir -Filter $sp.Filter -File -Force -ErrorAction Stop | Sort-Object LastWriteTime -Descending | Select-Object -First 40) }
+            foreach ($f in $files) {
+                [void]$items.Add([pscustomobject]@{ Path = $f.FullName; Kind = $sp.Kind; SizeBytes = [double]$f.Length; Modified = $f.LastWriteTime })
+            }
+        } catch { [void]$problems.Add(($sp.Dir + ': ' + (Fit $_.Exception.Message 140))) }
+    }
+    return [pscustomobject]@{ Items = $items; Problems = $problems }
+}
+function Get-DumpSettings {
+    $r = [ordered]@{ Known = $false; Type = ''; AutoReboot = ''; DumpFile = '' }
+    try {
+        $c = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\CrashControl' -ErrorAction Stop
+        $r.Known = $true
+        switch ([int]$c.CrashDumpEnabled) {
+            0 { $r.Type = 'None (no dump is written)' }
+            1 { $r.Type = 'Complete memory dump' }
+            2 { $r.Type = 'Kernel memory dump' }
+            3 { $r.Type = 'Small memory dump (minidump)' }
+            7 { $r.Type = 'Automatic memory dump' }
+            default { $r.Type = 'Setting value ' + [string]$c.CrashDumpEnabled }
+        }
+        if ($null -ne $c.AutoReboot) { $r.AutoReboot = $(if ([int]$c.AutoReboot -eq 1) { 'Restart automatically after a crash' } else { 'Do not restart automatically' }) }
+        $r.DumpFile = [string]$c.DumpFile
+    } catch { }
+    return $r
+}
+
+function Parse-AppCrash($o) {
+    $e = $o.Raw
+    $d = Get-EvData $e
+    $l = $d.List
+    $x = [ordered]@{
+        Time = $o.Time; Provider = $o.Provider; Id = $o.Id; Kind = ''; App = ''; AppVer = ''; Module = ''; ModVer = ''
+        Code = ''; Offset = ''; ProcId = ''; Path = ''; Parsed = $false; Message = ''
+    }
+    if ($o.Provider -eq 'Application Error' -and $o.Id -eq 1000) {
+        $x.Kind = 'Application crash'
+        if ($l.Count -ge 7 -and ([string]$l[6]) -match '^[0-9a-fA-F]{8}$') {
+            $x.App = [string]$l[0]; $x.AppVer = [string]$l[1]; $x.Module = [string]$l[3]; $x.ModVer = [string]$l[4]; $x.Code = ([string]$l[6]).ToLowerInvariant()
+            if ($l.Count -gt 7) { $x.Offset = [string]$l[7] }
+            if ($l.Count -gt 8) { $x.ProcId = [string]$l[8] }
+            if ($l.Count -gt 10) { $x.Path = [string]$l[10] }
+            $x.Parsed = $true
+        }
+    } elseif ($o.Provider -eq 'Application Hang' -and $o.Id -eq 1002) {
+        $x.Kind = 'Application hang'
+        if ($l.Count -ge 1) { $x.App = [string]$l[0]; $x.Parsed = $true }
+        if ($l.Count -gt 1) { $x.AppVer = [string]$l[1] }
+        if ($l.Count -gt 5 -and ([string]$l[5]) -match '^([A-Za-z]:\\|\\\\)') { $x.Path = [string]$l[5] }
+    } elseif ($o.Provider -eq '.NET Runtime' -and $o.Id -eq 1026) {
+        $x.Kind = '.NET unhandled exception'
+        $txt = ''
+        if ($l.Count -ge 1) { $txt = [string]$l[0] }
+        $mm = [regex]::Match($txt, '(?im)^[^\r\n:]{1,40}:\s*([^\r\n]+?\.exe)\s*$')
+        if ($mm.Success) { $x.App = $mm.Groups[1].Value.Trim(); $x.Parsed = $true }
+        $x.Code = 'e0434352'
+    }
+    $x.Message = Get-EvMessage $e 1500
+    return [pscustomobject]$x
+}
+
+# Collects application crashes, unexpected restarts / bugchecks and dump files for the window
+function Collect-Crashes([datetime]$since) {
+    $problems = New-Object System.Collections.ArrayList
+    $appEv = Get-LogEvents -Logs @('Application') -Since $since -Ids @(1000, 1001, 1002, 1026) -Max 1500
+    $sysEv = Get-LogEvents -Logs @('System') -Since $since -Ids @(41, 1001, 6005, 6006, 6008, 1074) -Max 1500
+    foreach ($p in $appEv.Problems) { [void]$problems.Add($p) }
+    foreach ($p in $sysEv.Problems) { [void]$problems.Add($p) }
+
+    $crashes = New-Object System.Collections.ArrayList
+    $werCount = 0
+    $werTypes = @{}
+    foreach ($o in $appEv.Events) {
+        if (($o.Provider -eq 'Application Error' -and $o.Id -eq 1000) -or ($o.Provider -eq 'Application Hang' -and $o.Id -eq 1002) -or ($o.Provider -eq '.NET Runtime' -and $o.Id -eq 1026)) {
+            [void]$crashes.Add((Parse-AppCrash $o))
+        } elseif ($o.Provider -eq 'Windows Error Reporting' -and $o.Id -eq 1001) {
+            $werCount++
+            try {
+                $d = Get-EvData $o.Raw
+                foreach ($v in $d.List) {
+                    if ([string]$v -match '^(APPCRASH|BEX|BEX64|AppHangB1|AppHangXProcB1|MoAppCrash|MoAppHang|CLR20r3|BlueScreen|LiveKernelEvent|PCHang|StoreAppCrash)$') {
+                        $nm = [string]$v
+                        if ($werTypes.ContainsKey($nm)) { $werTypes[$nm] = $werTypes[$nm] + 1 } else { $werTypes[$nm] = 1 }
+                        break
+                    }
+                }
+            } catch { }
+        }
+    }
+
+    # application crash groups: same program + module + exception code
+    $gmap = @{}
+    foreach ($c in $crashes) {
+        $k = (($c.Kind + '|' + $c.App + '|' + $c.Module + '|' + $c.Code)).ToLowerInvariant()
+        if (-not $gmap.ContainsKey($k)) {
+            $gmap[$k] = [pscustomobject]@{ Kind = $c.Kind; App = $c.App; Module = $c.Module; Code = $c.Code; Path = $c.Path; AppVer = $c.AppVer; Cnt = 0; First = $c.Time; Last = $c.Time; Items = (New-Object System.Collections.ArrayList) }
+        }
+        $g = $gmap[$k]
+        $g.Cnt = $g.Cnt + 1
+        if ($c.Time -lt $g.First) { $g.First = $c.Time }
+        if ($c.Time -gt $g.Last) { $g.Last = $c.Time }
+        if (-not $g.Path -and $c.Path) { $g.Path = $c.Path }
+        if ($g.Items.Count -lt 6) { [void]$g.Items.Add($c) }
+    }
+    $appGroups = @(@($gmap.Values) | Sort-Object @{ Expression = { $_.Cnt }; Descending = $true }, @{ Expression = { $_.Last }; Descending = $true })
+
+    # incidents: unexpected restarts and bugchecks
+    $k41 = @($sysEv.Events | Where-Object { $_.Provider -eq 'Microsoft-Windows-Kernel-Power' -and $_.Id -eq 41 })
+    $bug = @($sysEv.Events | Where-Object { $_.Id -eq 1001 -and $_.Provider -match 'WER-SystemErrorReporting|^BugCheck$' })
+    $u6008 = @($sysEv.Events | Where-Object { $_.Provider -eq 'EventLog' -and $_.Id -eq 6008 })
+    $shut = @($sysEv.Events | Where-Object { $_.Provider -eq 'User32' -and $_.Id -eq 1074 })
+    $dumps = Get-DumpFiles
+    foreach ($p in $dumps.Problems) { [void]$problems.Add($p) }
+    $usedBug = @{}
+    $used6008 = @{}
+    $incidents = New-Object System.Collections.ArrayList
+
+    foreach ($k in $k41) {
+        $inc = [ordered]@{
+            Time = $k.Time; Type = 'Unexpected restart (Kernel-Power 41)'; BugCode = ''; BugName = ''; BugHint = ''; BugParams = ''
+            DumpPath = ''; DumpExists = $false; Dumps = @(); Related = @(); Evidence = ''; Source = 'Kernel-Power 41'
+        }
+        $d41 = Get-EvData $k.Raw
+        if ($d41.Named.ContainsKey('BugcheckCode')) {
+            $bc = 0
+            try { $bc = [uint32]$d41.Named['BugcheckCode'] } catch { $bc = 0 }
+            if ($bc -ne 0) { $inc.BugCode = ('0x{0:X}' -f $bc) }
+        }
+        $rel = New-Object System.Collections.ArrayList
+        [void]$rel.Add((Fmt $k.Time) + '  Kernel-Power 41: system restarted without a clean shutdown')
+        foreach ($b in $bug) {
+            if ($usedBug.ContainsKey([string]$b.RecordId)) { continue }
+            if ([math]::Abs(($b.Time - $k.Time).TotalMinutes) -le 15) {
+                $usedBug[[string]$b.RecordId] = $true
+                $bd = Get-EvData $b.Raw
+                $joined = (@($bd.List) -join ' ')
+                $mc = [regex]::Match($joined, '(0x[0-9a-fA-F]{1,16})\s*\(([^)]*)\)')
+                if ($mc.Success) { $inc.BugCode = $mc.Groups[1].Value; $inc.BugParams = $mc.Groups[2].Value.Trim() }
+                elseif ($inc.BugCode -eq '') { $m2 = [regex]::Match($joined, '0x[0-9a-fA-F]{1,16}'); if ($m2.Success) { $inc.BugCode = $m2.Value } }
+                $dm = [regex]::Match($joined, '[A-Za-z]:\\[^\r\n|]*?\.dmp', 'IgnoreCase')
+                if ($dm.Success) { $inc.DumpPath = $dm.Value }
+                [void]$rel.Add((Fmt $b.Time) + '  BugCheck record (WER-SystemErrorReporting 1001)')
+                break
+            }
+        }
+        foreach ($u in $u6008) {
+            if ([math]::Abs(($u.Time - $k.Time).TotalMinutes) -le 15) { $used6008[[string]$u.RecordId] = $true; [void]$rel.Add((Fmt $u.Time) + '  EventLog 6008: previous shutdown was unexpected'); break }
+        }
+        foreach ($sh in $shut) {
+            $diff = ($k.Time - $sh.Time).TotalMinutes
+            if ($diff -ge 0 -and $diff -le 30) { [void]$rel.Add((Fmt $sh.Time) + '  User32 1074: a shutdown or restart was requested shortly before'); break }
+        }
+        $inc.Related = @($rel)
+        [void]$incidents.Add($inc)
+    }
+    foreach ($b in $bug) {
+        if ($usedBug.ContainsKey([string]$b.RecordId)) { continue }
+        $bd = Get-EvData $b.Raw
+        $joined = (@($bd.List) -join ' ')
+        $inc = [ordered]@{
+            Time = $b.Time; Type = 'Restart after a bugcheck (BSOD)'; BugCode = ''; BugName = ''; BugHint = ''; BugParams = ''
+            DumpPath = ''; DumpExists = $false; Dumps = @(); Related = @(((Fmt $b.Time) + '  BugCheck record (WER-SystemErrorReporting 1001)')); Evidence = ''; Source = 'BugCheck 1001'
+        }
+        $mc = [regex]::Match($joined, '(0x[0-9a-fA-F]{1,16})\s*\(([^)]*)\)')
+        if ($mc.Success) { $inc.BugCode = $mc.Groups[1].Value; $inc.BugParams = $mc.Groups[2].Value.Trim() }
+        else { $m2 = [regex]::Match($joined, '0x[0-9a-fA-F]{1,16}'); if ($m2.Success) { $inc.BugCode = $m2.Value } }
+        $dm = [regex]::Match($joined, '[A-Za-z]:\\[^\r\n|]*?\.dmp', 'IgnoreCase')
+        if ($dm.Success) { $inc.DumpPath = $dm.Value }
+        [void]$incidents.Add($inc)
+    }
+    foreach ($u in $u6008) {
+        if ($used6008.ContainsKey([string]$u.RecordId)) { continue }
+        $dup = $false
+        foreach ($i in $incidents) { if ([math]::Abs(($i.Time - $u.Time).TotalMinutes) -le 15) { $dup = $true; break } }
+        if ($dup) { continue }
+        [void]$incidents.Add([ordered]@{
+            Time = $u.Time; Type = 'Previous shutdown was unexpected (EventLog 6008)'; BugCode = ''; BugName = ''; BugHint = ''; BugParams = ''
+            DumpPath = ''; DumpExists = $false; Dumps = @(); Related = @(((Fmt $u.Time) + '  EventLog 6008')); Evidence = ''; Source = 'EventLog 6008'
+        })
+    }
+
+    # bugcheck names, dump association (by event path or by timestamp) and an honest evidence statement
+    foreach ($inc in $incidents) {
+        if ($inc.BugCode -ne '') { $bi = Bug-Info $inc.BugCode; $inc.BugName = $bi.Name; $inc.BugHint = $bi.Hint }
+        if ($inc.DumpPath -ne '') { try { $inc.DumpExists = [bool](Test-Path -LiteralPath $inc.DumpPath) } catch { $inc.DumpExists = $false } }
+        $near = New-Object System.Collections.ArrayList
+        foreach ($f in $dumps.Items) {
+            if ($f.Kind -like 'User-mode*') { continue }
+            if ([math]::Abs(($f.Modified - $inc.Time).TotalMinutes) -le 30) { [void]$near.Add($f.Path + '  (' + (SizeText $f.SizeBytes) + ', ' + (Fmt $f.Modified) + ')') }
+        }
+        $inc.Dumps = @($near)
+        if ($inc.DumpExists -or $near.Count -gt 0) {
+            $inc.Evidence = 'A dump file is associated with this incident (by the path in the event or by timestamp). Only its name, size and date were inspected; MeshalFix does not analyze dump contents. Identifying a faulting driver needs a debugger such as WinDbg (!analyze -v).'
+        } elseif ($inc.BugCode -ne '') {
+            $inc.Evidence = 'A stop code was recorded but no matching dump file was found, so the faulting component cannot be identified from this data.'
+        } else {
+            $inc.Evidence = 'No stop code or dump was recorded. The available evidence does not show whether this was a crash, a power loss or a hard reset.'
+        }
+    }
+    $incSorted = @(@($incidents) | Sort-Object @{ Expression = { $_.Time }; Descending = $true })
+
+    return [pscustomobject]@{
+        Since = $since; AppCrashes = $crashes; AppGroups = $appGroups; Incidents = $incSorted
+        WerCount = $werCount; WerTypes = $werTypes; Dumps = $dumps.Items; DumpSettings = (Get-DumpSettings)
+        Problems = $problems; Complete = ($problems.Count -eq 0); AppOk = ($appEv.Problems.Count -eq 0); SysOk = ($sysEv.Problems.Count -eq 0)
+        Limited = ([bool]$appEv.Limited -or [bool]$sysEv.Limited); Time = (Get-Date)
+    }
+}
+
+# ------------------------------------------------------------ findings
+function Cm-Text([int]$c) {
+    switch ($c) {
+        1  { return 'Device is not configured correctly' }
+        3  { return 'Driver may be corrupted or the system is low on memory' }
+        10 { return 'Device cannot start' }
+        12 { return 'Not enough free resources for the device' }
+        14 { return 'Device needs a restart to work properly' }
+        18 { return 'Drivers for the device need to be reinstalled' }
+        22 { return 'Device is disabled' }
+        24 { return 'Device is not present, not working properly, or does not have all drivers installed' }
+        28 { return 'Drivers are not installed for the device' }
+        31 { return 'Device is not working properly because Windows cannot load its drivers' }
+        37 { return 'The driver returned a failure from its initialization routine' }
+        39 { return 'The driver is corrupted or missing' }
+        43 { return 'Windows stopped the device because it reported problems' }
+        52 { return 'Windows cannot verify the digital signature of the driver' }
+        default { return 'Windows device error code ' + $c }
+    }
+}
+
+function Quick-Restarts([datetime]$since) {
+    $r = Get-LogEvents -Logs @('System') -Since $since -Ids @(41, 1001, 6008) -Max 500
+    $k = @($r.Events | Where-Object { $_.Provider -eq 'Microsoft-Windows-Kernel-Power' -and $_.Id -eq 41 })
+    $b = @($r.Events | Where-Object { $_.Id -eq 1001 -and $_.Provider -match 'WER-SystemErrorReporting|^BugCheck$' })
+    $u = @($r.Events | Where-Object { $_.Provider -eq 'EventLog' -and $_.Id -eq 6008 })
+    $codes = New-Object System.Collections.ArrayList
+    foreach ($e in $b) {
+        try {
+            $d = Get-EvData $e.Raw
+            $m = [regex]::Match((@($d.List) -join ' '), '0x[0-9a-fA-F]{1,16}')
+            if ($m.Success) { [void]$codes.Add($m.Value) }
+        } catch { }
+    }
+    return [pscustomobject]@{ Kp41 = $k; Bug = $b; E6008 = $u; Codes = @($codes); Problems = @($r.Problems); Complete = ($r.Problems.Count -eq 0) }
+}
+
+function Run-DismCheck {
+    $r = [pscustomobject]@{ Ran = $true; ExitCode = $null; Result = 'UNKNOWN'; Summary = ''; Output = '' }
+    try {
+        $out = (& dism.exe /Online /Cleanup-Image /CheckHealth 2>&1 | Out-String)
+        $r.ExitCode = $LASTEXITCODE
+        $out = $out.Replace([string][char]0, '')
+        $r.Output = (Fit $out 1500)
+        if ($out -match 'No component store corruption detected') { $r.Result = 'PASSED'; $r.Summary = 'DISM reported: no component store corruption detected.' }
+        elseif ($out -match 'component store is repairable') { $r.Result = 'ISSUE'; $r.Summary = 'DISM reported that the component store is repairable (corruption was flagged).' }
+        else { $r.Result = 'UNKNOWN'; $r.Summary = ('The DISM result text was not recognized (it may be in another language). Exit code: ' + [string]$r.ExitCode + '.') }
+    } catch { $r.Result = 'UNKNOWN'; $r.Summary = ('DISM could not be started: ' + (Fit $_.Exception.Message 120)) }
+    return $r
+}
+function Run-SfcVerify {
+    $r = [pscustomobject]@{ Ran = $true; ExitCode = $null; Result = 'UNKNOWN'; Summary = ''; Output = '' }
+    $old = $null
+    try { $old = [Console]::OutputEncoding } catch { }
+    try {
+        try { [Console]::OutputEncoding = [Text.Encoding]::Unicode } catch { }
+        $out = (& sfc.exe /verifyonly 2>&1 | Out-String)
+        $r.ExitCode = $LASTEXITCODE
+        $out = $out.Replace([string][char]0, '')
+        $r.Output = (Fit $out 1500)
+        if ($out -match 'did not find any integrity violations') { $r.Result = 'PASSED'; $r.Summary = 'SFC verify-only reported no integrity violations.' }
+        elseif ($out -match 'found integrity violations') { $r.Result = 'ISSUE'; $r.Summary = 'SFC verify-only reported integrity violations. Details are in the CBS.log file.' }
+        else { $r.Result = 'UNKNOWN'; $r.Summary = ('The SFC result text was not recognized (it may be in another language or the scan could not run). Exit code: ' + [string]$r.ExitCode + '.') }
+    } catch { $r.Result = 'UNKNOWN'; $r.Summary = ('SFC could not be started: ' + (Fit $_.Exception.Message 120)) }
+    finally { if ($old) { try { [Console]::OutputEncoding = $old } catch { } } }
+    return $r
+}
+
+function Add-EventClassFindings($f, $scan) {
+    # Groups of known classes, from a completed scan. Always cautious: an isolated entry is not a root cause.
+    $cls = @{ storage = (New-Object System.Collections.ArrayList); hardware = (New-Object System.Collections.ArrayList); display = (New-Object System.Collections.ArrayList); memory = (New-Object System.Collections.ArrayList) }
+    foreach ($g in $scan.Groups) {
+        $kb = Find-KB $g.Provider $g.Id
+        if ($kb -and $cls.ContainsKey($kb.Class)) { [void]$cls[$kb.Class].Add($g) }
+    }
+    $titles = @{ storage = 'Storage or file-system errors were recorded'; hardware = 'Hardware error reports (WHEA) were recorded'; display = 'Display driver errors were recorded'; memory = 'A low virtual memory condition was recorded' }
+    foreach ($c in @('storage', 'hardware', 'display', 'memory')) {
+        $list = $cls[$c]
+        if ($list.Count -eq 0) { continue }
+        $total = 0
+        $ev = New-Object System.Collections.ArrayList
+        $nextText = ''
+        foreach ($g in $list) {
+            $total += $g.Cnt
+            $kb = Find-KB $g.Provider $g.Id
+            [void]$ev.Add(([string]$g.Cnt + ' x ' + $g.Provider + ' (Event ' + [string]$g.Id + '), last ' + (Fmt $g.Last)))
+            if (-not $nextText) { $nextText = $kb.Next }
+        }
+        $status = 'WARNING'; $sev = 'Low'
+        if ($c -eq 'storage') { $sev = 'Medium'; if ($total -ge 3) { $status = 'ISSUE'; $sev = 'High' } }
+        elseif ($c -eq 'hardware') { $sev = 'Medium'; if ($total -ge 3) { $status = 'ISSUE' } }
+        elseif ($c -eq 'display') { if ($total -ge 3) { $sev = 'Medium' } }
+        [void]$ev.Add('These are observations from the event log. They do not by themselves confirm a failing component.')
+        [void]$f.Add((New-Finding 'Events' ($titles[$c] + ' (' + $total + ')') $status $sev $ev $nextText))
+    }
+}
+
+function Build-HealthFindings($sys, $scan, $rs, $dism, $sfc) {
+    $f = New-Object System.Collections.ArrayList
+
+    # activation
+    if ($sys.Activation -and $sys.Activation.Known) {
+        $code = [int]$sys.Activation.Status
+        if ($code -eq 1) { [void]$f.Add((New-Finding 'Windows' 'Windows activation' 'PASSED' 'Info' @('Windows reports: ' + $sys.Activation.Text + '. No product key was read.') '')) }
+        elseif ($code -eq 0) { [void]$f.Add((New-Finding 'Windows' 'Windows is not activated' 'ISSUE' 'Low' @('Windows reports: ' + $sys.Activation.Text + '.') 'Open Settings > System > Activation to see the status and options.')) }
+        else { [void]$f.Add((New-Finding 'Windows' 'Windows activation is not in the normal licensed state' 'WARNING' 'Low' @('Windows reports: ' + $sys.Activation.Text + '.') 'Open Settings > System > Activation to see the status.')) }
+    } else {
+        [void]$f.Add((New-Finding 'Windows' 'Windows activation' 'UNKNOWN' 'Info' @('The activation status could not be read reliably on this PC.') 'Open Settings > System > Activation to check it manually.'))
+    }
+
+    # pending restart
+    if (@($sys.PendingReboot).Count -gt 0) {
+        [void]$f.Add((New-Finding 'Windows' 'A restart appears to be pending' 'WARNING' 'Low' @($sys.PendingReboot) 'Restart Windows when convenient, then run the checks again. Some indicators are left behind by installers and do not always mean a restart is required.'))
+    } else {
+        [void]$f.Add((New-Finding 'Windows' 'Pending restart' 'PASSED' 'Info' @('None of the checked pending-restart indicators were set.') ''))
+    }
+
+    # free space
+    $vols = @($sys.Volumes)
+    if ($vols.Count -gt 0) {
+        $st = 'PASSED'; $sev = 'Info'; $ev = New-Object System.Collections.ArrayList
+        foreach ($v in $vols) {
+            if ($v.SizeBytes -le 0) { continue }
+            $pct = [math]::Round(100.0 * $v.FreeBytes / $v.SizeBytes, 1)
+            [void]$ev.Add(($v.Drive + '  ' + (SizeText $v.FreeBytes) + ' free of ' + (SizeText $v.SizeBytes) + ' (' + $pct + ' percent free)'))
+            if ($pct -lt 5) { $st = 'ISSUE'; $sev = 'Medium' }
+            elseif ($pct -lt 10 -and $st -ne 'ISSUE') { $st = 'WARNING'; $sev = 'Low' }
+        }
+        $nx = ''
+        if ($st -ne 'PASSED') { $nx = 'Free up space on the low drive. The Cleaning Tools menu can help.' }
+        [void]$f.Add((New-Finding 'Storage' 'Free disk space' $st $sev $ev $nx))
+    } else {
+        [void]$f.Add((New-Finding 'Storage' 'Free disk space' 'UNKNOWN' 'Info' @('Volume information could not be read.') ''))
+    }
+
+    # drive health reported by Windows
+    $disks = @($sys.Disks)
+    if ($disks.Count -gt 0) {
+        foreach ($d in $disks) {
+            $ev = New-Object System.Collections.ArrayList
+            [void]$ev.Add(($d.Name + ' (' + $d.Media + ', ' + $d.Bus + ', ' + (SizeText $d.SizeBytes) + ')'))
+            [void]$ev.Add('Windows storage status: ' + $d.Health + ' / ' + $d.Operational)
+            $st = 'UNKNOWN'; $sev = 'Info'
+            if ($d.Health -eq 'Healthy') { $st = 'PASSED' }
+            elseif ($d.Health -eq 'Warning') { $st = 'WARNING'; $sev = 'Medium' }
+            elseif ($d.Health -eq 'Unhealthy') { $st = 'ISSUE'; $sev = 'High' }
+            if ($null -ne $d.Wear -and [string]$d.Wear -ne '') { [void]$ev.Add('Wear reported by the drive: ' + [string]$d.Wear + ' percent of rated life used'); if ([double]$d.Wear -ge 80 -and $st -eq 'PASSED') { $st = 'WARNING'; $sev = 'Medium' } }
+            if ($null -ne $d.Temp -and [string]$d.Temp -ne '' -and [double]$d.Temp -gt 0) { [void]$ev.Add('Temperature reported: ' + [string]$d.Temp + ' C') }
+            $ue = 0
+            if ($null -ne $d.ReadErrUncorrected) { $ue += [double]$d.ReadErrUncorrected }
+            if ($null -ne $d.WriteErrUncorrected) { $ue += [double]$d.WriteErrUncorrected }
+            if ($ue -gt 0) { [void]$ev.Add('Uncorrected read/write errors reported by the drive: ' + [string]$ue); if ($st -eq 'PASSED') { $st = 'WARNING'; $sev = 'Medium' } }
+            [void]$ev.Add('This is the status Windows reports. It is not a full SMART analysis.')
+            $nx = ''
+            if ($st -eq 'WARNING' -or $st -eq 'ISSUE') { $nx = 'Back up important data and check the drive with the manufacturer tool.' }
+            if ($st -eq 'UNKNOWN') { $nx = 'This drive does not report a health status to Windows. Use the manufacturer tool if you need SMART details.' }
+            [void]$f.Add((New-Finding 'Storage' ('Drive health: ' + $d.Name) $st $sev $ev $nx))
+        }
+    } else {
+        $why = 'Drive health is not reported on this PC or could not be read.'
+        if ($sys.DiskNote) { $why = $why + ' (' + $sys.DiskNote + ')' }
+        [void]$f.Add((New-Finding 'Storage' 'Drive health' 'UNKNOWN' 'Info' @($why) ''))
+    }
+
+    # display adapters
+    $gpus = @($sys.Gpus)
+    if ($gpus.Count -gt 0) {
+        foreach ($g in $gpus) {
+            $ev = New-Object System.Collections.ArrayList
+            [void]$ev.Add(($g.Name + ', driver ' + $g.Driver + $(if ($g.DriverDate) { ' (' + $g.DriverDate.Substring(0, [math]::Min(10, $g.DriverDate.Length)) + ')' } else { '' })))
+            if ([int]$g.ErrorCode -ne 0) {
+                [void]$ev.Add('Windows device error code ' + [string]$g.ErrorCode + ': ' + (Cm-Text ([int]$g.ErrorCode)))
+                [void]$f.Add((New-Finding 'Display' ('Display adapter reports a device error: ' + $g.Name) 'ISSUE' 'Medium' $ev 'Open Device Manager, check the adapter properties and update or reinstall its driver from the GPU vendor.'))
+            } elseif ($g.Status -eq 'OK') {
+                [void]$ev.Add('Windows device status: OK. This is a device status, not a GPU health test.')
+                [void]$f.Add((New-Finding 'Display' ('Display adapter status: ' + $g.Name) 'PASSED' 'Info' $ev ''))
+            } else {
+                [void]$ev.Add('Windows device status: ' + $(if ($g.Status) { $g.Status } else { 'not reported' }))
+                [void]$f.Add((New-Finding 'Display' ('Display adapter status: ' + $g.Name) 'UNKNOWN' 'Info' $ev ''))
+            }
+        }
+    } else {
+        [void]$f.Add((New-Finding 'Display' 'Display adapter status' 'UNKNOWN' 'Info' @('No display adapter information could be read.') ''))
+    }
+
+    # unexpected restarts
+    if ($rs.Complete) {
+        $n41 = @($rs.Kp41).Count; $nb = @($rs.Bug).Count; $n6 = @($rs.E6008).Count
+        if ($n41 + $nb + $n6 -gt 0) {
+            $ev = New-Object System.Collections.ArrayList
+            [void]$ev.Add(('Kernel-Power 41 events: ' + $n41 + ', BugCheck records: ' + $nb + ', EventLog 6008 records: ' + $n6 + ' (last 7 days)'))
+            foreach ($e in @($rs.Kp41 | Select-Object -First 3)) { [void]$ev.Add('Unexpected restart recorded at ' + (Fmt $e.Time)) }
+            if (@($rs.Codes).Count -gt 0) { [void]$ev.Add('Bugcheck code(s) recorded: ' + ((@($rs.Codes) | Select-Object -Unique) -join ', ')) }
+            [void]$ev.Add('The events record that restarts happened. They do not identify the cause.')
+            $sev = 'Medium'; if ($n41 -ge 3) { $sev = 'High' }
+            [void]$f.Add((New-Finding 'Stability' 'Unexpected restart(s) were recorded' 'ISSUE' $sev $ev 'Open the Crash and BSOD Analyzer to see stop codes, related events and dump files.'))
+        } else {
+            [void]$f.Add((New-Finding 'Stability' 'Unexpected restarts' 'PASSED' 'Info' @('No Kernel-Power 41, BugCheck or EventLog 6008 records in the last 7 days (the System log was read successfully).') ''))
+        }
+    } else {
+        [void]$f.Add((New-Finding 'Stability' 'Unexpected restarts' 'UNKNOWN' 'Info' (@('The System log could not be read completely, so restarts could not be checked.') + @($rs.Problems)) 'Run the toolkit as administrator and try again.'))
+    }
+
+    # event summary
+    if (-not $scan.Complete) {
+        [void]$f.Add((New-Finding 'Events' 'Critical and Error events' 'UNKNOWN' 'Info' (@('The event log scan was incomplete. Zero results would not mean zero events.') + @($scan.Result.Problems)) 'Run the toolkit as administrator and try again.'))
+    } elseif ($scan.Total -eq 0) {
+        [void]$f.Add((New-Finding 'Events' 'Critical and Error events' 'PASSED' 'Info' @('No Critical or Error events in the System and Application logs in the last 7 days (both logs were read successfully).') ''))
+    } else {
+        $ev = New-Object System.Collections.ArrayList
+        $allNoise = $true
+        foreach ($g in @($scan.Groups | Select-Object -First 6)) {
+            [void]$ev.Add(([string]$g.Cnt + ' x ' + $g.Provider + ' (Event ' + [string]$g.Id + '): ' + (OneLine (Group-Msg $g) 110)))
+        }
+        foreach ($g in $scan.Groups) { $kb = Find-KB $g.Provider $g.Id; if (-not ($kb -and $kb.Class -eq 'noise')) { $allNoise = $false } }
+        if ($scan.Limited) { [void]$ev.Add('Results are limited to the newest 1500 events per log; the real number may be higher.') }
+        $title = ([string]$scan.Total + ' Critical/Error event(s) in ' + [string]$scan.Groups.Count + ' group(s), last 7 days')
+        $nx = 'Open the System Error Analyzer to inspect them. Isolated errors are common and are not a confirmed problem by themselves.'
+        if ($allNoise) { [void]$f.Add((New-Finding 'Events' $title 'INFO' 'Info' $ev $nx)) }
+        else { [void]$f.Add((New-Finding 'Events' $title 'WARNING' 'Low' $ev $nx)) }
+        Add-EventClassFindings $f $scan
+    }
+
+    # integrity
+    if ($dism) {
+        $sev = 'Info'; if ($dism.Result -eq 'ISSUE') { $sev = 'Medium' }
+        $nx = ''; if ($dism.Result -eq 'ISSUE') { $nx = 'The System Repair menu offers the component store repair and asks for confirmation first.' }
+        [void]$f.Add((New-Finding 'Integrity' 'Component store check (DISM CheckHealth)' $dism.Result $sev @($dism.Summary, 'This check reads the recorded component store state. It is not a full scan.') $nx))
+    } else {
+        [void]$f.Add((New-Finding 'Integrity' 'Component store check (DISM CheckHealth)' 'NOTCHECKED' 'Info' @('Not run in this session. Component store health is unknown.') 'Run this report again and choose Y at the DISM prompt (read-only, usually under a minute).'))
+    }
+    if ($sfc) {
+        $sev = 'Info'; if ($sfc.Result -eq 'ISSUE') { $sev = 'Medium' }
+        $nx = ''; if ($sfc.Result -eq 'ISSUE') { $nx = 'The System Repair menu offers SFC and DISM repairs and asks for confirmation first.' }
+        [void]$f.Add((New-Finding 'Integrity' 'System file check (SFC verify-only)' $sfc.Result $sev @($sfc.Summary) $nx))
+    } else {
+        [void]$f.Add((New-Finding 'Integrity' 'System file check (SFC verify-only)' 'NOTCHECKED' 'Info' @('Not run in this session. The state of protected system files is unknown.') 'Run this report again and choose Y at the SFC prompt (read-only, can take 5 to 15 minutes).'))
+    }
+    return @($f)
+}
+
+function Get-Overall($findings) {
+    $arr = @($findings)
+    if ($arr.Count -eq 0) { return [pscustomobject]@{ Status = 'NOTCHECKED'; Text = 'No diagnostic results are available' } }
+    $high = @($arr | Where-Object { $_.Status -eq 'ISSUE' -and $_.Severity -eq 'High' }).Count
+    $iss  = @($arr | Where-Object { $_.Status -eq 'ISSUE' }).Count
+    $wrn  = @($arr | Where-Object { $_.Status -eq 'WARNING' }).Count
+    $unk  = @($arr | Where-Object { $_.Status -eq 'UNKNOWN' }).Count
+    $nc   = @($arr | Where-Object { $_.Status -eq 'NOTCHECKED' }).Count
+    if ($high -gt 0) { return [pscustomobject]@{ Status = 'ISSUE'; Text = 'Attention recommended: serious issue(s) detected' } }
+    if ($iss -gt 0) { return [pscustomobject]@{ Status = 'ISSUE'; Text = 'Issues detected' } }
+    if ($wrn -gt 0) { return [pscustomobject]@{ Status = 'WARNING'; Text = 'Warnings detected' } }
+    if ($unk -gt 0) { return [pscustomobject]@{ Status = 'UNKNOWN'; Text = 'No issues found in the checks that completed, but some results could not be determined' } }
+    $t = 'No issues detected in the checks that were performed'
+    if ($nc -gt 0) { $t = $t + ' (some checks were not performed)' }
+    return [pscustomobject]@{ Status = 'PASSED'; Text = $t }
+}
+
+# ------------------------------------------------------------ console display helpers
+function Row([string]$label, [string]$value, [string]$color = 'Gray') {
+    Line ('  ' + $label.PadRight(14) + $value) $color
+}
+function Show-SystemSummary($sys) {
+    Line '  WINDOWS AND HARDWARE' 'Yellow'
+    if ($sys.OS) {
+        $o = $sys.OS
+        Row 'Windows' ($o.Caption + $(if ($o.DisplayVersion) { '  ' + $o.DisplayVersion } else { '' }))
+        Row 'Build' ($o.Version + $(if ($o.Ubr) { '.' + $o.Ubr } else { '' }) + '   Architecture: ' + $o.Arch + $(if ($o.Edition) { '   Edition ID: ' + $o.Edition } else { '' }))
+        Row 'Installed' ([string]$o.InstallDate) 
+        Row 'Last boot' ([string]$o.LastBoot)
+    } else { Row 'Windows' 'Could not be read' 'Magenta' }
+    if ($sys.Hardware) {
+        $h = $sys.Hardware
+        Row 'Computer' ($h.Manufacturer + ' ' + $h.Model)
+        Row 'Processor' ($h.Cpu + '  (' + $h.Cores + ' cores, ' + $h.Threads + ' threads)')
+        Row 'RAM' ((SizeText $h.RamBytes) + $(if ($h.RamModules -gt 0) { '  in ' + $h.RamModules + ' module(s) ' + $h.RamSpeed } else { '' }))
+        Row 'BIOS' ([string]$h.Bios)
+    } else { Row 'Computer' 'Could not be read' 'Magenta' }
+    foreach ($g in @($sys.Gpus)) {
+        $dd = ''
+        if ($g.DriverDate) { $dd = ' (' + $g.DriverDate.Substring(0, [math]::Min(10, $g.DriverDate.Length)) + ')' }
+        Row 'GPU' ($g.Name)
+        Row '' ('Driver ' + $g.Driver + $dd + $(if ($g.NvidiaBranded) { '  [NVIDIA version ' + $g.NvidiaBranded + ' - derived]' } else { '' }) + '  Status: ' + $g.Status + $(if ($g.Resolution) { '  ' + $g.Resolution } else { '' })) 'DarkGray'
+    }
+    foreach ($v in @($sys.Volumes)) {
+        $pct = 0
+        if ($v.SizeBytes -gt 0) { $pct = [math]::Round(100.0 * $v.FreeBytes / $v.SizeBytes, 1) }
+        Row ('Drive ' + $v.Drive) ((SizeText $v.SizeBytes) + ' total, ' + (SizeText $v.FreeBytes) + ' free (' + $pct + ' percent)  ' + $v.Fs + $(if ($v.Label) { '  "' + $v.Label + '"' } else { '' }))
+    }
+    foreach ($n in @($sys.Notes)) { Line ('  Note: ' + $n) 'DarkGray' }
+}
+function Show-Findings($findings) {
+    $w = Get-ConWidth
+    $areas = @(@($findings | ForEach-Object { $_.Area }) | Select-Object -Unique)
+    foreach ($a in $areas) {
+        Blank
+        Line ('  ' + $a.ToUpper()) 'Yellow'
+        foreach ($x in @($findings | Where-Object { $_.Area -eq $a })) {
+            $tag = '[' + (StatusText $x.Status) + ']'
+            Write-Host ('  ' + $tag.PadRight(22)) -NoNewline -ForegroundColor (StatusColor $x.Status)
+            $sv = ''
+            if ($x.Status -eq 'ISSUE' -or $x.Status -eq 'WARNING') { if ($x.Severity -and $x.Severity -ne 'Info') { $sv = '  (severity: ' + $x.Severity + ')' } }
+            if ($x.Kind -eq 'Possible') { $sv = $sv + '  (possible explanation, not confirmed)' }
+            Write-Host ((Fit $x.Title ($w - 26)) + $sv) -ForegroundColor White
+            $shown = 0
+            foreach ($ev in @($x.Evidence)) {
+                if ($shown -ge 6) { Line '                        ...more evidence is in the HTML report' 'DarkGray'; break }
+                foreach ($wl in (Wrap-Text ([string]$ev) ($w - 28) 4)) { Line ('                        ' + $wl) 'Gray' }
+                $shown++
+            }
+            if ($x.Next) { foreach ($wl in (Wrap-Text ('Next step: ' + $x.Next) ($w - 28) 4)) { Line ('                        ' + $wl) 'Cyan' } }
+        }
+    }
+}
+function Show-Overall($ov, $findings) {
+    Blank
+    $arr = @($findings)
+    $p = @($arr | Where-Object { $_.Status -eq 'PASSED' }).Count
+    $i = @($arr | Where-Object { $_.Status -eq 'ISSUE' }).Count
+    $w = @($arr | Where-Object { $_.Status -eq 'WARNING' }).Count
+    $n = @($arr | Where-Object { $_.Status -eq 'NOTCHECKED' }).Count
+    $u = @($arr | Where-Object { $_.Status -eq 'UNKNOWN' }).Count
+    Line ('  OVERALL: ' + $ov.Text) (StatusColor $ov.Status)
+    Line ('  Passed: ' + $p + '   Issues: ' + $i + '   Warnings: ' + $w + '   Not checked: ' + $n + '   Unable to determine: ' + $u) 'Gray'
+}
+
+# ------------------------------------------------------------ Health
+function Do-Health($dism, $sfc) {
+    Line '  [1/4] Reading Windows, hardware, GPU, storage and activation information...' 'Cyan'
+    $sys = Get-SystemSummary
+    Line '  [2/4] Reading System and Application events (last 7 days, Critical and Error)...' 'Cyan'
+    $scan = Scan-Events 168 $false
+    Line '  [3/4] Checking for unexpected restarts (last 7 days)...' 'Cyan'
+    $rs = Quick-Restarts ((Get-Date).AddDays(-7))
+    Line '  [4/4] Evaluating the results...' 'Cyan'
+    $findings = @(Build-HealthFindings $sys $scan $rs $dism $sfc)
+    $ov = Get-Overall $findings
+    $egroups = @($scan.Groups | Select-Object -First 20 | ForEach-Object { Group-ToRecord $_ })
+    $obj = [ordered]@{
+        Module = 'health'; Generated = (Fmt (Get-Date)); EventWindowHours = 168
+        System = $sys; Findings = $findings
+        Overall = [ordered]@{ Status = $ov.Status; Text = $ov.Text }
+        EventCounts = [ordered]@{ Total = $scan.Total; Critical = $scan.Critical; Errors = $scan.Errors; Groups = $scan.Groups.Count; Complete = $scan.Complete; Limited = $scan.Limited }
+        EventGroups = $egroups
+        Integrity = [ordered]@{ Dism = $dism; Sfc = $sfc }
+    }
+    [void](Save-Session 'health' $obj)
+    Log ('Health report collected: ' + $findings.Count + ' findings, overall ' + $ov.Status)
+    return [pscustomobject]@{ Sys = $sys; Findings = $findings; Overall = $ov }
+}
+function Run-Health {
+    Head 'SYSTEM HEALTH REPORT'
+    Line '  Read-only checks. Repair commands (SFC /scannow, DISM RestoreHealth, CHKDSK /f) are never started here.' 'Gray'
+    if (-not $IsAdmin) { Line '  Note: this window is not elevated, so some checks may be unavailable.' 'Yellow' }
+    Blank
+    $dism = $null; $sfc = $null
+    Line '  Optional integrity checks (read-only). If you skip them they are shown as Not checked.' 'Gray'
+    if ($IsAdmin) {
+        if (Ask-YN '  Run DISM CheckHealth now? It only reads the stored component-store state (usually under a minute)') {
+            Line '  Running DISM CheckHealth...' 'Cyan'; $dism = Run-DismCheck
+        }
+        if (Ask-YN '  Run SFC verify-only now? It scans protected files WITHOUT repairing them and can take 5 to 15 minutes') {
+            Line '  Running SFC verify-only. Please wait, there is no progress display...' 'Cyan'; $sfc = Run-SfcVerify
+        }
+    } else { Line '  DISM and SFC need administrator rights, so they are marked Not checked.' 'Yellow' }
+    Blank
+    $r = Do-Health $dism $sfc
+    Head 'SYSTEM HEALTH REPORT'
+    Show-SystemSummary $r.Sys
+    Show-Findings $r.Findings
+    Show-Overall $r.Overall $r.Findings
+    Blank
+    Line '  Findings marked Not checked or Unable to determine are NOT passed checks.' 'DarkGray'
+    Offer-Export
+}
+
+# ------------------------------------------------------------ event browsing (Errors, Recent)
+function Show-Occurrence($o, [string]$title) {
+    Head $title
+    Row 'Time' (Fmt $o.Time)
+    Row 'Log' $o.Log
+    Row 'Source' $o.Provider
+    Row 'Event ID' ([string]$o.Id)
+    Row 'Level' (LevelName $o.Level) (LevelColor $o.Level)
+    Row 'Record ID' ([string]$o.RecordId)
+    Blank
+    Line '  Message:' 'Yellow'
+    $w = Get-ConWidth
+    foreach ($l in (Wrap-Text (Get-EvMessage $o.Raw 3000) ($w - 4) 45)) { Line ('    ' + $l) 'Gray' }
+    try {
+        $d = Get-EvData $o.Raw
+        if ($d.List.Count -gt 0 -and $d.List.Count -le 12) {
+            Blank
+            Line '  Event data fields:' 'Yellow'
+            $i = 0
+            foreach ($v in $d.List) { $i++; Line ('    [' + $i + '] ' + (Fit ([string]$v) ($w - 12))) 'DarkGray' }
+        }
+    } catch { }
+    Blank
+    Wait-Enter 'Press Enter to go back'
+}
+function Show-GroupDetail($g) {
+    while ($true) {
+        Head 'EVENT DETAILS'
+        $w = Get-ConWidth
+        Row 'Source' $g.Provider
+        Row 'Event ID' ([string]$g.Id)
+        Row 'Log / level' ($g.Log + ' / ' + (LevelName $g.Level)) (LevelColor $g.Level)
+        Row 'Occurrences' ([string]$g.Cnt + ' in the scanned window (first ' + (Fmt $g.First) + ', last ' + (Fmt $g.Last) + ')')
+        Blank
+        Line '  Latest message (observed evidence):' 'Yellow'
+        foreach ($l in (Wrap-Text (Group-Msg $g) ($w - 4) 22)) { Line ('    ' + $l) 'Gray' }
+        Blank
+        $kb = Find-KB $g.Provider $g.Id
+        if ($kb) {
+            Line ('  What this event is: ' + $kb.Title) 'Yellow'
+            foreach ($l in (Wrap-Text $kb.Means ($w - 4) 8)) { Line ('    ' + $l) 'Gray' }
+            Line '  Possible causes (not confirmed):' 'Yellow'
+            foreach ($l in (Wrap-Text $kb.Causes ($w - 4) 8)) { Line ('    ' + $l) 'Gray' }
+            Line '  Suggested next steps:' 'Yellow'
+            foreach ($l in (Wrap-Text $kb.Next ($w - 4) 8)) { Line ('    ' + $l) 'Cyan' }
+        } else {
+            Line '  No built-in explanation exists for this event, so none is guessed.' 'DarkGray'
+            Line '  The message above is the only evidence. Search the source name and Event ID in Microsoft documentation if you need more.' 'DarkGray'
+        }
+        Blank
+        if ($g.Items.Count -gt 1) {
+            Line '  Recent occurrences:' 'Yellow'
+            $i = 0
+            foreach ($o in $g.Items) { $i++; Line ('    [' + $i + '] ' + (Fmt $o.Time)) 'Gray' }
+        }
+        Blank
+        $a = (Read-Host '  Enter an occurrence number to see its full text, or press Enter to go back').Trim()
+        if ($a -eq '') { return }
+        $n = 0
+        if ([int]::TryParse($a, [ref]$n) -and $n -ge 1 -and $n -le $g.Items.Count) { Show-Occurrence $g.Items[$n - 1] 'EVENT OCCURRENCE' }
+    }
+}
+# Returns: 'back', 'window', 'warnings' or 'analyzer'
+function Browse-Events($scan, [string]$title, [bool]$isRecent) {
+    $page = 0; $size = 12
+    while ($true) {
+        Head $title
+        $w = Get-ConWidth
+        $lvl = (@($scan.Levels | ForEach-Object { LevelName $_ }) -join ' + ')
+        Line ('  Window: last ' + $scan.Hours + ' hours   Logs: System, Application   Levels: ' + $lvl) 'Gray'
+        Line ('  Events found: ' + $scan.Total + ' (Critical ' + $scan.Critical + ', Error ' + $scan.Errors + ', Warning ' + $scan.Warnings + ') in ' + $scan.Groups.Count + ' group(s)') 'Gray'
+        if ($scan.Complete) { Line ('  Scan status: completed. Logs read: ' + (@($scan.Result.Scanned) -join ', ')) 'Green' }
+        else {
+            Line '  Scan status: INCOMPLETE. Zero results here would NOT mean zero events.' 'Yellow'
+            foreach ($p in @($scan.Result.Problems)) { Line ('    ' + (Fit $p ($w - 6))) 'Yellow' }
+        }
+        if ($scan.Limited) { Line '  Results were limited to the newest 1500 events per log; the real count may be higher.' 'Yellow' }
+        Blank
+        $groups = @($scan.Groups)
+        if ($groups.Count -eq 0) {
+            if ($scan.Complete) { Line '  No matching events were found. Both logs were read successfully.' 'Green' }
+            else { Line '  No events could be listed because the scan did not complete.' 'Yellow' }
+        } else {
+            $msgW = [math]::Max(16, $w - 66)
+            Line (('  {0,-3} {1,-8} {2,5}  {3,-11} {4,-30} {5}' -f '#', 'Level', 'Count', 'Last seen', 'Source (ID)', 'Message')) 'DarkYellow'
+            $end = [math]::Min($groups.Count, ($page + 1) * $size)
+            for ($i = $page * $size; $i -lt $end; $i++) {
+                $g = $groups[$i]
+                $row = ('  {0,-3} {1,-8} {2,5}  {3,-11} {4,-30} {5}' -f ($i + 1), (LevelName $g.Level), $g.Cnt, $g.Last.ToString('MM-dd HH:mm', $Inv), (Fit ($g.Provider + ' (' + $g.Id + ')') 30), (OneLine (Group-Msg $g) $msgW))
+                Line $row (LevelColor $g.Level)
+            }
+            $pages = [math]::Ceiling($groups.Count / $size)
+            Line ('  Page ' + ($page + 1) + ' of ' + $pages) 'DarkGray'
+        }
+        Blank
+        $mi = New-Object System.Collections.ArrayList
+        if ($groups.Count -gt 0) {
+            $fn = $page * $size + 1
+            $ln = [math]::Min($groups.Count, ($page + 1) * $size)
+            $rng = $(if ($fn -eq $ln) { [string]$fn } else { [string]$fn + '-' + [string]$ln })
+            [void]$mi.Add(@($rng, ('Type an event number from the list (' + $rng + ') to see its details')))
+        }
+        [void]$mi.Add(@('N', 'Next page'))
+        [void]$mi.Add(@('P', 'Previous page'))
+        if ($isRecent) { [void]$mi.Add(@('E', 'Expand time window')); [void]$mi.Add(@('A', 'Open the full System Error Analyzer')) }
+        else { [void]$mi.Add(@('W', 'Change time window')); [void]$mi.Add(@('T', 'Toggle warnings')) }
+        [void]$mi.Add(@('0', 'Back'))
+        Show-Menu $mi
+        $a = Read-Choice
+        if ($a -eq '0' -or $a -eq '') { return 'back' }
+        if ($a -ieq 'N') { if (($page + 1) * $size -lt $groups.Count) { $page++ }; continue }
+        if ($a -ieq 'P') { if ($page -gt 0) { $page-- }; continue }
+        if ($isRecent) {
+            if ($a -ieq 'E') { return 'window' }
+            if ($a -ieq 'A') { return 'analyzer' }
+        } else {
+            if ($a -ieq 'W') { return 'window' }
+            if ($a -ieq 'T') { return 'warnings' }
+        }
+        $n = 0
+        if ([int]::TryParse($a, [ref]$n) -and $n -ge 1 -and $n -le $groups.Count) { Show-GroupDetail $groups[$n - 1] }
+    }
+}
+function Show-Menu($items) {
+    $dot = [string][char]0x25CF
+    foreach ($it in $items) {
+        Write-Host '   [' -NoNewline -ForegroundColor DarkYellow
+        Write-Host ([string]$it[0]) -NoNewline -ForegroundColor White
+        Write-Host '] ' -NoNewline -ForegroundColor DarkYellow
+        Write-Host ($dot + ' ') -NoNewline -ForegroundColor DarkYellow
+        Write-Host ([string]$it[1]) -ForegroundColor Gray
+    }
+    Blank
+}
+function Read-Choice {
+    $dot = [string][char]0x25CF
+    Write-Host ('  ' + $dot + ' ') -NoNewline -ForegroundColor DarkYellow
+    $a = Read-Host 'Select an option'
+    if ($null -eq $a) { return '' }
+    return $a.Trim()
+}
+function Pick-Window([int]$defIdx) {
+    $dot = [string][char]0x25CF
+    $opts = @('last 24 hours', 'last 7 days', 'last 30 days')
+    $hrs = @(24, 168, 720)
+    Blank
+    Line '  Time window:' 'Yellow'
+    for ($i = 0; $i -lt 3; $i++) {
+        Write-Host '   [' -NoNewline -ForegroundColor DarkYellow
+        Write-Host ([string]($i + 1)) -NoNewline -ForegroundColor White
+        Write-Host '] ' -NoNewline -ForegroundColor DarkYellow
+        Write-Host ($dot + ' ') -NoNewline -ForegroundColor DarkYellow
+        Write-Host $opts[$i] -ForegroundColor Gray
+    }
+    Blank
+    while ($true) {
+        Write-Host ('  ' + $dot + ' ') -NoNewline -ForegroundColor DarkYellow
+        $a = (Read-Host 'Select an option').Trim()
+        if ($a -eq '') { $a = [string]$defIdx }
+        if ($a -eq '1' -or $a -eq '2' -or $a -eq '3') {
+            $k = [int]$a - 1
+            return [pscustomobject]@{ Hours = $hrs[$k]; Label = $opts[$k] }
+        }
+        Line '  Please enter 1, 2 or 3.' 'Yellow'
+    }
+}
+
+function Run-Errors {
+    Head 'SYSTEM ERROR ANALYZER'
+    Line '  Reads the System and Application event logs and groups repeated events. Read-only.' 'Gray'
+    Blank
+    $win = Pick-Window 2
+    $hours = $win.Hours
+    $withWarn = $false
+    while ($true) {
+        Head 'SYSTEM ERROR ANALYZER'
+        Line ('  Reading System and Application logs (' + $hours + ' hours)... this can take a moment.') 'Cyan'
+        $scan = Scan-Events $hours $withWarn
+        Save-EventSession 'errors' $scan
+        $act = Browse-Events $scan 'SYSTEM ERROR ANALYZER' $false
+        if ($act -eq 'window') { Head 'SYSTEM ERROR ANALYZER'; $hours = (Pick-Window 2).Hours; continue }
+        if ($act -eq 'warnings') { $withWarn = -not $withWarn; continue }
+        break
+    }
+    Offer-Export
+}
+function Run-Recent {
+    $hours = 24
+    while ($true) {
+        Head 'RECENT CRITICAL/ERROR EVENTS'
+        Line ('  Reading System and Application logs (' + $hours + ' hours)...') 'Cyan'
+        $scan = Scan-Events $hours $false
+        Save-EventSession 'recent' $scan
+        $act = Browse-Events $scan 'RECENT CRITICAL/ERROR EVENTS' $true
+        if ($act -eq 'window') {
+            if ($hours -lt 168) { $hours = 168 } elseif ($hours -lt 720) { $hours = 720 } else { Line '  The time window is already at its maximum (30 days).' 'Yellow'; Start-Sleep -Seconds 2 }
+            continue
+        }
+        if ($act -eq 'analyzer') { Run-Errors; return }
+        break
+    }
+    Offer-Export
+}
+
+# ------------------------------------------------------------ Crash and BSOD
+function Get-ModuleHint([string]$mod) {
+    $m = ([string]$mod).ToLowerInvariant()
+    if ($m -eq '' -or $m -eq 'unknown') { return 'The faulting module is not named in the event.' }
+    if ($m -match '^(ntdll|kernelbase|kernel32)\.dll$') { return 'A Windows core library. Many different failures are reported here, so it does not point to a specific cause.' }
+    if ($m -match '^(nvwgf2um|nvwgf2umx|atidxx64|atidxx32|amdxx64|amdxx32|atiumd64|igd10iumd64|igd11iumd64|igd12umd64|nvd3dum|nvd3dumx|nvoglv64)\.dll$') { return 'A graphics driver module. The crash happened in or through the graphics driver stack. The cause could be the program, the driver or the GPU; this is not a confirmed GPU fault.' }
+    if ($m -match '^(d3d9|d3d11|d3d12|dxgi|d3dcompiler_\d+)\.dll$') { return 'A DirectX component. It shows where the crash surfaced, not necessarily what caused it.' }
+    if ($m -match '^(vcruntime\d+|msvcp\d+|msvcr\d+|ucrtbase|concrt\d+)(_\d)?\.dll$') { return 'A C/C++ runtime library. Often a program error surfacing in the runtime; it is not proof that the runtime is missing or damaged.' }
+    if ($m -match '^(unityplayer|gameassembly)\.dll$') { return 'A Unity engine component of the program itself.' }
+    if ($m -match 'easyanticheat|beclient|battleye|vgk') { return 'An anti-cheat module is named. Anti-cheat software can be involved in a crash but is not necessarily the cause.' }
+    if ($m -match '^gameoverlayrenderer') { return 'The Steam overlay module. An overlay can be involved in a crash but is not necessarily the cause.' }
+    return ''
+}
+
+function Build-CrashFindings($c, [int]$hours) {
+    $f = New-Object System.Collections.ArrayList
+    $lab = $(if ($hours -lt 48) { [string]$hours + ' hours' } else { [string][math]::Round($hours / 24) + ' days' })
+    if (-not $c.AppOk) {
+        [void]$f.Add((New-Finding 'Crashes' 'Application crashes' 'UNKNOWN' 'Info' (@('The Application log could not be read completely.') + @($c.Problems)) 'Run the toolkit as administrator and try again.'))
+    } elseif (@($c.AppGroups).Count -eq 0) {
+        [void]$f.Add((New-Finding 'Crashes' 'Application crashes' 'PASSED' 'Info' @('No Application Error 1000, Application Hang 1002 or .NET Runtime 1026 events in the last ' + $lab + ' (the Application log was read successfully).') ''))
+    } else {
+        foreach ($g in @($c.AppGroups | Select-Object -First 5)) {
+            $ev = New-Object System.Collections.ArrayList
+            [void]$ev.Add($g.Kind + ': ' + $(if ($g.App) { $g.App } else { '(program name not parsed)' }) + $(if ($g.AppVer) { ' ' + $g.AppVer } else { '' }))
+            if ($g.Module) { [void]$ev.Add('Faulting module: ' + $g.Module) }
+            if ($g.Code) { $t = Get-ExcText $g.Code; [void]$ev.Add('Exception code: ' + (Show-Code $g.Code) + $(if ($t) { ' - ' + $t } else { '' })) }
+            [void]$ev.Add([string]$g.Cnt + ' occurrence(s), first ' + (Fmt $g.First) + ', last ' + (Fmt $g.Last))
+            $mh = Get-ModuleHint $g.Module
+            if ($mh -and $g.Module) { [void]$ev.Add('About the module: ' + $mh) }
+            $st = 'WARNING'; $sev = 'Low'
+            if ($g.Cnt -ge 3) { $st = 'ISSUE'; $sev = 'Medium' } elseif ($g.Cnt -eq 2) { $sev = 'Medium' }
+            $nm = $(if ($g.App) { $g.App } else { 'a program' })
+            [void]$f.Add((New-Finding 'Crashes' ($nm + ' ' + $g.Kind.ToLower() + ' (' + $g.Cnt + 'x)') $st $sev $ev 'Update or reinstall the program. If the same module and exception repeat, the same problem is likely recurring; the exception code alone is not a root cause.'))
+        }
+        if (@($c.AppGroups).Count -gt 5) { [void]$f.Add((New-Finding 'Crashes' ('More crash groups exist (' + (@($c.AppGroups).Count - 5) + ' further)') 'INFO' 'Info' @('See the Crash and BSOD Analyzer or the HTML report for the full list.') '')) }
+    }
+    if (-not $c.SysOk) {
+        [void]$f.Add((New-Finding 'Crashes' 'Unexpected restarts and bugchecks' 'UNKNOWN' 'Info' (@('The System log could not be read completely.') + @($c.Problems)) 'Run the toolkit as administrator and try again.'))
+    } elseif (@($c.Incidents).Count -eq 0) {
+        [void]$f.Add((New-Finding 'Crashes' 'Unexpected restarts and bugchecks' 'PASSED' 'Info' @('No Kernel-Power 41, BugCheck or EventLog 6008 records in the last ' + $lab + ' (the System log was read successfully).') ''))
+    } else {
+        $ev = New-Object System.Collections.ArrayList
+        foreach ($i in @($c.Incidents | Select-Object -First 5)) {
+            $t = (Fmt $i.Time) + '  ' + $i.Type
+            if ($i.BugCode) { $t = $t + '  stop code ' + $i.BugCode + $(if ($i.BugName) { ' (' + $i.BugName + ')' } else { '' }) }
+            [void]$ev.Add($t)
+        }
+        $withDump = @($c.Incidents | Where-Object { $_.DumpExists -or @($_.Dumps).Count -gt 0 }).Count
+        [void]$ev.Add($withDump.ToString() + ' of ' + @($c.Incidents).Count + ' incident(s) have an associated dump file (metadata only; contents not analyzed).')
+        $sev = 'Medium'; if (@($c.Incidents).Count -ge 3) { $sev = 'High' }
+        [void]$f.Add((New-Finding 'Crashes' (@($c.Incidents).Count.ToString() + ' unexpected restart or bugcheck incident(s) in the last ' + $lab) 'ISSUE' $sev $ev 'Identifying a faulting driver needs a debugger such as WinDbg to analyze the dump. Meanwhile check recent driver or hardware changes, temperatures and power.'))
+    }
+    $dl = @($c.Dumps)
+    if ($dl.Count -gt 0) {
+        [void]$f.Add((New-Finding 'Crashes' 'Crash dump files' 'INFO' 'Info' @($dl.Count.ToString() + ' dump file(s) found in standard locations. Newest: ' + (Fmt $dl[0].Modified) + '.', 'MeshalFix lists names, sizes and dates only. It does not analyze dump contents and never deletes dumps.') ''))
+    } else {
+        $why = 'No dump files were found in the standard locations.'
+        if ($c.DumpSettings.Known) { $why = $why + ' Crash dump setting: ' + $c.DumpSettings.Type + '.' }
+        [void]$f.Add((New-Finding 'Crashes' 'Crash dump files' 'INFO' 'Info' @($why) ''))
+    }
+    return @($f)
+}
+
+function Do-Crash([int]$hours) {
+    $since = (Get-Date).AddHours(-1 * $hours)
+    Line '  [1/3] Reading Application and System events for crashes and restarts...' 'Cyan'
+    $c = Collect-Crashes $since
+    Line '  [2/3] Evaluating incidents and dump files...' 'Cyan'
+    $findings = @(Build-CrashFindings $c $hours)
+    $agr = @($c.AppGroups | Select-Object -First 40 | ForEach-Object {
+        [pscustomobject]@{ Kind = $_.Kind; App = $_.App; AppVer = $_.AppVer; Module = $_.Module; Code = $_.Code; CodeText = (Get-ExcText $_.Code); ModuleHint = (Get-ModuleHint $_.Module)
+            Count = $_.Cnt; First = (Fmt $_.First); Last = (Fmt $_.Last); Path = $_.Path }
+    })
+    $inc = @($c.Incidents | Select-Object -First 40 | ForEach-Object {
+        [pscustomobject]@{ Time = (Fmt $_.Time); Type = $_.Type; BugCode = $_.BugCode; BugName = $_.BugName; BugHint = $_.BugHint; BugParams = $_.BugParams
+            DumpPath = $_.DumpPath; DumpExists = $_.DumpExists; Dumps = @($_.Dumps); Related = @($_.Related); Evidence = $_.Evidence }
+    })
+    $dm = @($c.Dumps | Select-Object -First 40 | ForEach-Object { [pscustomobject]@{ Path = $_.Path; Kind = $_.Kind; Size = (SizeText $_.SizeBytes); Modified = (Fmt $_.Modified) } })
+    $wt = @(); foreach ($k in $c.WerTypes.Keys) { $wt += ($k + ': ' + $c.WerTypes[$k]) }
+    $obj = [ordered]@{
+        Module = 'crash'; Generated = (Fmt (Get-Date)); WindowHours = $hours; Complete = $c.Complete; Limited = $c.Limited
+        Problems = @($c.Problems); AppCrashEvents = @($c.AppCrashes).Count; AppGroups = $agr; Incidents = $inc; Dumps = $dm
+        DumpSettings = $c.DumpSettings; WerRecords = $c.WerCount; WerTypes = $wt; Findings = $findings
+    }
+    [void](Save-Session 'crash' $obj)
+    Line '  [3/3] Done.' 'Cyan'
+    Log ('Crash analysis: ' + @($c.AppGroups).Count + ' app groups, ' + @($c.Incidents).Count + ' incidents, ' + @($c.Dumps).Count + ' dump files')
+    return [pscustomobject]@{ Data = $c; Findings = $findings }
+}
+
+function Show-AppGroup($g) {
+    Head 'APPLICATION CRASH DETAILS'
+    $w = Get-ConWidth
+    Row 'Type' $g.Kind
+    Row 'Program' ($g.App + $(if ($g.AppVer) { '  version ' + $g.AppVer } else { '' }))
+    Row 'Module' ($(if ($g.Module) { $g.Module } else { '(not named)' }))
+    Row 'Exception' ((Show-Code $g.Code) + $(if (Get-ExcText $g.Code) { ' - ' + (Get-ExcText $g.Code) } else { '' }))
+    Row 'Path' ($(if ($g.Path) { $g.Path } else { '(not available)' }))
+    Row 'Occurrences' ([string]$g.Cnt + '  (first ' + (Fmt $g.First) + ', last ' + (Fmt $g.Last) + ')')
+    $mh = Get-ModuleHint $g.Module
+    if ($mh) { Blank; Line '  About the faulting module:' 'Yellow'; foreach ($l in (Wrap-Text $mh ($w - 4) 6)) { Line ('    ' + $l) 'Gray' } }
+    Blank
+    Line '  Recent occurrences:' 'Yellow'
+    foreach ($i in $g.Items) { Line ('    ' + (Fmt $i.Time) + '   process ID ' + $i.ProcId + '   offset ' + $i.Offset) 'Gray' }
+    Blank
+    Line '  The same module and exception repeating suggests the same problem recurring. It does not confirm a root cause.' 'DarkGray'
+    Blank
+    Wait-Enter 'Press Enter to go back'
+}
+function Show-Incident($i) {
+    Head 'RESTART / BSOD INCIDENT DETAILS'
+    $w = Get-ConWidth
+    Row 'Time' (Fmt $i.Time)
+    Row 'Type' $i.Type
+    if ($i.BugCode) {
+        Row 'Stop code' ($i.BugCode + $(if ($i.BugName) { '  ' + $i.BugName } else { '  (name not in the built-in list)' }))
+        if ($i.BugParams) { Row 'Parameters' $i.BugParams }
+        if ($i.BugHint) { foreach ($l in (Wrap-Text $i.BugHint ($w - 18) 5)) { Row '' $l 'DarkGray' } }
+    } else { Row 'Stop code' 'none recorded' }
+    Row 'Dump (event)' ($(if ($i.DumpPath) { $i.DumpPath + $(if ($i.DumpExists) { '  [file exists]' } else { '  [file not found]' }) } else { 'not named in the event' }))
+    foreach ($d in @($i.Dumps)) { Row 'Dump (time)' ($d + '  [possible match by timestamp]') }
+    Blank
+    Line '  Related events:' 'Yellow'
+    foreach ($r in @($i.Related)) { Line ('    ' + $r) 'Gray' }
+    Blank
+    Line '  Is the evidence sufficient?' 'Yellow'
+    foreach ($l in (Wrap-Text $i.Evidence ($w - 4) 8)) { Line ('    ' + $l) 'Gray' }
+    Blank
+    Wait-Enter 'Press Enter to go back'
+}
+
+function Run-Crash {
+    Head 'CRASH & BSOD ANALYZER'
+    Line '  Looks at application crashes, bugchecks, unexpected restarts and dump files. Read-only; dumps are never deleted.' 'Gray'
+    Blank
+    $win = Pick-Window 3
+    Blank
+    $res = Do-Crash $win.Hours
+    $c = $res.Data
+    while ($true) {
+        Head 'CRASH & BSOD ANALYZER'
+        $w = Get-ConWidth
+        Line ('  Window: ' + $win.Label + '   ' + $(if ($c.Complete) { 'Scan status: completed' } else { 'Scan status: INCOMPLETE (see below)' })) $(if ($c.Complete) { 'Green' } else { 'Yellow' })
+        foreach ($p in @($c.Problems)) { Line ('    ' + (Fit $p ($w - 6))) 'Yellow' }
+        if ($c.Limited) { Line '  Results were limited to the newest 1500 events per query.' 'Yellow' }
+        Blank
+        Line '  APPLICATION CRASHES' 'Yellow'
+        $ag = @($c.AppGroups)
+        if ($ag.Count -eq 0) { Line $(if ($c.AppOk) { '    None recorded in this window.' } else { '    Could not be determined (the log could not be read).' }) $(if ($c.AppOk) { 'Green' } else { 'Yellow' }) }
+        else {
+            for ($i = 0; $i -lt [math]::Min(10, $ag.Count); $i++) {
+                $g = $ag[$i]
+                Line (('    [A{0}] {1,3}x  {2,-11} {3,-22} {4,-22} {5}' -f ($i + 1), $g.Cnt, $g.Last.ToString('MM-dd HH:mm', $Inv), (Fit $g.App 22), (Fit $g.Module 22), (Show-Code $g.Code))) 'Gray'
+            }
+            if ($ag.Count -gt 10) { Line ('    ...and ' + ($ag.Count - 10) + ' more group(s) in the HTML report') 'DarkGray' }
+        }
+        Blank
+        Line '  SYSTEM CRASHES AND UNEXPECTED RESTARTS' 'Yellow'
+        $ic = @($c.Incidents)
+        if ($ic.Count -eq 0) { Line $(if ($c.SysOk) { '    None recorded in this window.' } else { '    Could not be determined (the log could not be read).' }) $(if ($c.SysOk) { 'Green' } else { 'Yellow' }) }
+        else {
+            for ($i = 0; $i -lt [math]::Min(10, $ic.Count); $i++) {
+                $n = $ic[$i]
+                $code = $(if ($n.BugCode) { $n.BugCode + $(if ($n.BugName) { ' ' + $n.BugName } else { '' }) } else { 'no stop code recorded' })
+                Line (('    [I{0}] {1,-17} {2,-40} {3}' -f ($i + 1), (Fmt $n.Time).Substring(0, [math]::Min(16, (Fmt $n.Time).Length)), (Fit $n.Type 40), (Fit $code ($w - 70)))) 'Red'
+            }
+        }
+        Blank
+        Line '  DUMP FILES (names, sizes and dates only; contents are not analyzed)' 'Yellow'
+        $dl = @($c.Dumps)
+        if ($dl.Count -eq 0) { Line '    No dump files found in the standard locations.' 'Gray' }
+        else { foreach ($d in @($dl | Select-Object -First 8)) { Line ('    ' + (Fit ($d.Path + '  ' + (SizeText $d.SizeBytes) + '  ' + (Fmt $d.Modified)) ($w - 6))) 'Gray' } }
+        if ($c.DumpSettings.Known) { Line ('    Crash dump setting: ' + $c.DumpSettings.Type + '. ' + $c.DumpSettings.AutoReboot + '. (read only, not changed)') 'DarkGray' }
+        if ($c.WerCount -gt 0) { Line ('    Windows Error Reporting records in the window: ' + $c.WerCount) 'DarkGray' }
+        Blank
+        Line '  Dump contents (faulting driver, call stack) need a debugger such as WinDbg. MeshalFix does not analyze them.' 'DarkGray'
+        Show-Menu @(@('A1', 'Type A and a number (A1, A2...) to see an application crash in detail'), @('I1', 'Type I and a number (I1, I2...) to see a restart or BSOD incident in detail'), @('0', 'Back'))
+        $a = Read-Choice
+        if ($a -eq '0' -or $a -eq '') { break }
+        if ($a -match '^[Aa](\d+)$') { $n = [int]$Matches[1]; if ($n -ge 1 -and $n -le $ag.Count) { Show-AppGroup $ag[$n - 1] } }
+        elseif ($a -match '^[Ii](\d+)$') { $n = [int]$Matches[1]; if ($n -ge 1 -and $n -le $ic.Count) { Show-Incident $ic[$n - 1] } }
+    }
+    Offer-Export
+}
+
+# ------------------------------------------------------------ Reliability history
+function Rel-Category([string]$src) {
+    $s = ([string]$src).ToLowerInvariant()
+    if ($s -match 'application error|application hang') { return 'Application failure' }
+    if ($s -match 'systemerrorreporting|bugcheck|kernel-power|^eventlog$') { return 'Windows failure' }
+    if ($s -match 'windows error reporting') { return 'Failure report (WER)' }
+    if ($s -match 'windowsupdate') { return 'Windows Update' }
+    if ($s -match 'msiinstaller|installer|appx|appmodel') { return 'Software install or removal' }
+    if ($s -match 'whea|^disk$|ntfs|stor') { return 'Hardware or storage' }
+    return 'Other'
+}
+function Rel-IsFailure([string]$cat) { return ($cat -eq 'Application failure' -or $cat -eq 'Windows failure' -or $cat -eq 'Failure report (WER)' -or $cat -eq 'Hardware or storage') }
+
+function Collect-Reliability([datetime]$since) {
+    $r = [pscustomobject]@{ Source = ''; Available = $false; Records = (New-Object System.Collections.ArrayList); Stability = (New-Object System.Collections.ArrayList); Problems = (New-Object System.Collections.ArrayList); Limited = $false; Note = ''; Fallback = $false }
+    $recs = $null
+    try {
+        $recs = @(Get-CimInstance -ClassName Win32_ReliabilityRecords -OperationTimeoutSec 120 -ErrorAction Stop)
+        $r.Available = $true
+    } catch { [void]$r.Problems.Add('Reliability records: ' + (Fit $_.Exception.Message 160)) }
+    if ($r.Available) {
+        $r.Source = 'Windows Reliability Monitor records (Win32_ReliabilityRecords)'
+        $sel = @($recs | Where-Object { $_.TimeGenerated -ge $since } | Sort-Object TimeGenerated -Descending)
+        if ($sel.Count -gt 1500) { $r.Limited = $true; $sel = @($sel | Select-Object -First 1500) }
+        foreach ($x in $sel) {
+            $src = [string]$x.SourceName
+            $cat = Rel-Category $src
+            $msg = [string]$x.Message
+            if ($msg.Length -gt 1500) { $msg = $msg.Substring(0, 1500) + ' ...[truncated]' }
+            [void]$r.Records.Add([pscustomobject]@{
+                Time = $x.TimeGenerated; Source = $src; Component = $(if ($x.ProductName) { [string]$x.ProductName } else { $src }); Category = $cat
+                IsFailure = (Rel-IsFailure $cat); Id = [string]$x.EventIdentifier; Summary = (OneLine $msg 120); Details = $msg
+            })
+        }
+        if ($r.Records.Count -eq 0) { $r.Note = 'The Reliability Monitor data source returned no records in this window. That can mean nothing was recorded or that reliability data collection is not active. It is not proof of a problem-free system.' }
+    } else {
+        $r.Fallback = $true
+        $r.Source = 'Event-log approximation (Reliability Monitor data was not accessible)'
+        $r.Note = 'The Reliability Monitor data source could not be read, so this list is built from Application and System event logs instead. It may differ from what Reliability Monitor shows, and it is not a complete history.'
+        $ap = Get-LogEvents -Logs @('Application') -Since $since -Ids @(1000, 1002, 1026) -Max 1500
+        $s1 = Get-LogEvents -Logs @('System') -Since $since -Ids @(41, 1001, 6008, 4101) -Max 1500
+        $s2 = Get-LogEvents -Logs @('System') -Since $since -Levels @(1, 2, 3) -Max 3000
+        foreach ($q in @($ap, $s1, $s2)) { foreach ($p in $q.Problems) { [void]$r.Problems.Add($p) } }
+        if ($ap.Limited -or $s1.Limited -or $s2.Limited) { $r.Limited = $true }
+        $seen = @{}
+        $all = @()
+        foreach ($o in $ap.Events) { if ($o.Provider -match '^(Application Error|Application Hang|\.NET Runtime)$') { $all += $o } }
+        foreach ($o in $s1.Events) { if ($o.Provider -match 'Kernel-Power|WER-SystemErrorReporting|^BugCheck$|^EventLog$|^Display$') { $all += $o } }
+        foreach ($o in $s2.Events) { if ($o.Provider -match 'WHEA-Logger|^disk$|^Ntfs$|Microsoft-Windows-Ntfs|nvlddmkm|amdkmdag') { $all += $o } }
+        foreach ($o in ($all | Sort-Object Time -Descending)) {
+            $key = $o.Log + '|' + [string]$o.RecordId
+            if ($seen.ContainsKey($key)) { continue }
+            $seen[$key] = $true
+            $cat = Rel-Category $o.Provider
+            if ($o.Provider -eq 'Display') { $cat = 'Hardware or storage' }
+            $msg = Get-EvMessage $o.Raw 1500
+            [void]$r.Records.Add([pscustomobject]@{
+                Time = $o.Time; Source = $o.Provider; Component = $o.Provider; Category = $cat; IsFailure = (Rel-IsFailure $cat)
+                Id = [string]$o.Id; Summary = (OneLine $msg 120); Details = $msg
+            })
+        }
+    }
+    try {
+        $st = @(Get-CimInstance -ClassName Win32_ReliabilityStabilityMetrics -OperationTimeoutSec 60 -ErrorAction Stop | Sort-Object TimeGenerated -Descending | Select-Object -First 14)
+        foreach ($m in $st) { [void]$r.Stability.Add([pscustomobject]@{ Time = (Fmt $m.TimeGenerated); Index = [math]::Round([double]$m.SystemStabilityIndex, 2) }) }
+    } catch { }
+    return $r
+}
+function Get-RelClusters($records) {
+    $out = New-Object System.Collections.ArrayList
+    $asc = @($records | Sort-Object Time)
+    $cur = New-Object System.Collections.ArrayList
+    $flush = {
+        param($list)
+        if ($list.Count -ge 2) {
+            $srcs = @($list | ForEach-Object { $_.Source } | Select-Object -Unique)
+            $fail = @($list | Where-Object { $_.IsFailure }).Count
+            if ($srcs.Count -ge 2 -and $fail -ge 1) {
+                $lines = @($list | Select-Object -First 6 | ForEach-Object { (Fmt $_.Time) + '  ' + $_.Category + ': ' + $_.Component })
+                [void]$out.Add([pscustomobject]@{ Start = (Fmt $list[0].Time); End = (Fmt $list[$list.Count - 1].Time); Count = $list.Count; Lines = $lines })
+            }
+        }
+    }
+    $last = $null
+    foreach ($x in $asc) {
+        if ($null -ne $last -and (($x.Time - $last).TotalMinutes -gt 10)) { & $flush $cur; $cur = New-Object System.Collections.ArrayList }
+        [void]$cur.Add($x)
+        $last = $x.Time
+    }
+    & $flush $cur
+    return @($out | Sort-Object Start -Descending | Select-Object -First 10)
+}
+function Do-Reliability([int]$hours) {
+    $since = (Get-Date).AddHours(-1 * $hours)
+    Line '  Collecting reliability data (this can take a little while)...' 'Cyan'
+    $r = Collect-Reliability $since
+    $recs = @($r.Records)
+    $cats = [ordered]@{}
+    foreach ($x in $recs) { if ($cats.Contains($x.Category)) { $cats[$x.Category] = $cats[$x.Category] + 1 } else { $cats[$x.Category] = 1 } }
+    $clusters = @(Get-RelClusters $recs)
+    $f = New-Object System.Collections.ArrayList
+    if (-not $r.Available -and $recs.Count -eq 0) {
+        [void]$f.Add((New-Finding 'Reliability' 'Reliability history' 'UNKNOWN' 'Info' (@('Neither the Reliability Monitor data source nor the event-log fallback produced records.') + @($r.Problems)) 'Open the native Reliability Monitor to look at the history.'))
+    } else {
+        $nApp = @($recs | Where-Object { $_.Category -eq 'Application failure' }).Count
+        $nWin = @($recs | Where-Object { $_.Category -eq 'Windows failure' }).Count
+        $nHw = @($recs | Where-Object { $_.Category -eq 'Hardware or storage' }).Count
+        $ev = New-Object System.Collections.ArrayList
+        [void]$ev.Add('Source: ' + $r.Source)
+        [void]$ev.Add('Records in window: ' + $recs.Count + ' (application failures ' + $nApp + ', Windows failures ' + $nWin + ', hardware/storage ' + $nHw + ')')
+        if ($r.Note) { [void]$ev.Add($r.Note) }
+        if ($r.Stability.Count -gt 0) { [void]$ev.Add('Latest stability index reported by Windows: ' + [string]$r.Stability[0].Index + ' (scale 1 to 10) on ' + $r.Stability[0].Time) }
+        $st = 'INFO'; $sev = 'Info'
+        if ($nWin -gt 0 -or $nHw -gt 0) { $st = 'WARNING'; $sev = 'Medium' } elseif ($nApp -gt 0) { $st = 'WARNING'; $sev = 'Low' }
+        if ($r.Fallback) { $st = $(if ($st -eq 'INFO') { 'UNKNOWN' } else { $st }) }
+        [void]$f.Add((New-Finding 'Reliability' 'Reliability history summary' $st $sev $ev 'Review the timeline below or in the HTML report. Related items are linked by time only, which is not proof of causation.'))
+    }
+    $top = @($recs | Select-Object -First 200 | ForEach-Object {
+        [pscustomobject]@{ Time = (Fmt $_.Time); Source = $_.Source; Component = $_.Component; Category = $_.Category; IsFailure = $_.IsFailure; Id = $_.Id; Summary = $_.Summary; Details = $_.Details }
+    })
+    $obj = [ordered]@{
+        Module = 'reliability'; Generated = (Fmt (Get-Date)); WindowHours = $hours; Source = $r.Source; Available = $r.Available; Fallback = $r.Fallback
+        Complete = ($r.Problems.Count -eq 0); Limited = $r.Limited; Note = $r.Note; Problems = @($r.Problems)
+        TotalRecords = $recs.Count; Categories = $cats; Stability = @($r.Stability); Clusters = $clusters; Records = $top; Findings = @($f)
+    }
+    [void](Save-Session 'reliability' $obj)
+    Log ('Reliability: ' + $recs.Count + ' records, source ' + $r.Source)
+    return [pscustomobject]@{ Data = $r; Records = $recs; Clusters = $clusters; Categories = $cats; Findings = @($f) }
+}
+function Run-Reliability {
+    Head 'RELIABILITY HISTORY'
+    Line '  Summarizes Windows reliability data. Read-only.' 'Gray'
+    Blank
+    $win = Pick-Window 3
+    Blank
+    $page = 0; $size = 12
+    $res = Do-Reliability $win.Hours
+    while ($true) {
+        Head 'RELIABILITY HISTORY'
+        $w = Get-ConWidth
+        $r = $res.Data
+        Line ('  Window: ' + $win.Label) 'Gray'
+        Line ('  Source: ' + $r.Source) $(if ($r.Fallback) { 'Yellow' } else { 'Green' })
+        if ($r.Note) { foreach ($l in (Wrap-Text $r.Note ($w - 4) 5)) { Line ('  ' + $l) 'Yellow' } }
+        foreach ($p in @($r.Problems)) { Line ('    ' + (Fit $p ($w - 6))) 'Yellow' }
+        if ($r.Limited) { Line '  Results were limited; older records in the window may not be listed.' 'Yellow' }
+        Blank
+        $recs = @($res.Records)
+        if ($res.Categories.Count -gt 0) { Line ('  Records: ' + $recs.Count + '   ' + ((@($res.Categories.Keys | ForEach-Object { $_ + ' ' + $res.Categories[$_] })) -join ', ')) 'Gray' }
+        if ($r.Stability.Count -gt 0) { Line ('  Stability index (1-10, computed by Windows): ' + ((@($r.Stability | Select-Object -First 7 | ForEach-Object { [string]$_.Index })) -join '  ') + '  (newest first)') 'Gray' }
+        if (@($res.Clusters).Count -gt 0) {
+            Blank
+            Line '  Related incidents (records close in time; correlation by time only, not proof of cause):' 'Yellow'
+            foreach ($cl in @($res.Clusters | Select-Object -First 3)) { Line ('    ' + $cl.Start + ' - ' + $cl.End + '  ' + $cl.Count + ' records: ' + (Fit (@($cl.Lines) -join ' | ') ($w - 50))) 'Gray' }
+        }
+        Blank
+        if ($recs.Count -gt 0) {
+            Line (('  {0,-3} {1,-16} {2,-24} {3,-26} {4}' -f '#', 'Date and time', 'Type', 'Component', 'Summary')) 'DarkYellow'
+            $end = [math]::Min($recs.Count, ($page + 1) * $size)
+            for ($i = $page * $size; $i -lt $end; $i++) {
+                $x = $recs[$i]
+                Line (('  {0,-3} {1,-16} {2,-24} {3,-26} {4}' -f ($i + 1), $x.Time.ToString('yyyy-MM-dd HH:mm', $Inv), (Fit $x.Category 24), (Fit $x.Component 26), (Fit $x.Summary ([math]::Max(10, $w - 74))))) $(if ($x.IsFailure) { 'Red' } else { 'Gray' })
+            }
+            Line ('  Page ' + ($page + 1) + ' of ' + [math]::Ceiling($recs.Count / $size)) 'DarkGray'
+        } else { Line '  No records to list.' 'Gray' }
+        Blank
+        $rf = $page * $size + 1
+        $rl = [math]::Min($recs.Count, ($page + 1) * $size)
+        $rr = $(if ($rf -eq $rl) { [string]$rf } else { [string]$rf + '-' + [string]$rl })
+        $rmenu = New-Object System.Collections.ArrayList
+        if ($recs.Count -gt 0) { [void]$rmenu.Add(@($rr, ('Type a record number from the list (' + $rr + ') to see its details'))) }
+        foreach ($ri in @(@('N', 'Next page'), @('P', 'Previous page'), @('W', 'Change time window'), @('R', 'Open Windows Reliability Monitor'), @('0', 'Back'))) { [void]$rmenu.Add($ri) }
+        Show-Menu $rmenu
+        $a = Read-Choice
+        if ($a -eq '0' -or $a -eq '') { break }
+        if ($a -ieq 'N') { if (($page + 1) * $size -lt $recs.Count) { $page++ }; continue }
+        if ($a -ieq 'P') { if ($page -gt 0) { $page-- }; continue }
+        if ($a -ieq 'R') { try { Start-Process -FilePath 'perfmon.exe' -ArgumentList '/rel' -ErrorAction Stop } catch { Line ('  Could not open Reliability Monitor: ' + $_.Exception.Message) 'Yellow'; Start-Sleep -Seconds 2 }; continue }
+        if ($a -ieq 'W') { Head 'RELIABILITY HISTORY'; $win = Pick-Window 3; $page = 0; $res = Do-Reliability $win.Hours; continue }
+        $n = 0
+        if ([int]::TryParse($a, [ref]$n) -and $n -ge 1 -and $n -le $recs.Count) {
+            $x = $recs[$n - 1]
+            Head 'RELIABILITY RECORD'
+            Row 'Time' (Fmt $x.Time); Row 'Type' $x.Category; Row 'Component' $x.Component; Row 'Source' $x.Source; Row 'Event ID' $x.Id
+            Blank
+            foreach ($l in (Wrap-Text $x.Details ($w - 4) 30)) { Line ('    ' + $l) 'Gray' }
+            Blank
+            Wait-Enter 'Press Enter to go back'
+        }
+    }
+    Offer-Export
+}
+
+# ------------------------------------------------------------ Gaming diagnostics
+function Get-PeArch([string]$p) {
+    try {
+        $fs = [IO.File]::Open($p, 'Open', 'Read', 'ReadWrite')
+        try {
+            $br = New-Object IO.BinaryReader($fs)
+            if ($fs.Length -lt 64) { return 'unknown' }
+            if ($br.ReadUInt16() -ne 0x5A4D) { return 'not a PE file' }
+            $fs.Position = 0x3C
+            $off = $br.ReadInt32()
+            if ($off -lt 0 -or $off -gt ($fs.Length - 6)) { return 'unknown' }
+            $fs.Position = $off
+            if ($br.ReadUInt32() -ne 0x4550) { return 'unknown' }
+            $m = $br.ReadUInt16()
+            if ($m -eq 0x8664) { return 'x64' }
+            if ($m -eq 0x14c) { return 'x86 (32-bit)' }
+            if ($m -eq 0xAA64) { return 'ARM64' }
+            return ('machine type 0x' + $m.ToString('X'))
+        } finally { $fs.Close() }
+    } catch { return 'unknown' }
+}
+function Get-ExeInfo([string]$exe) {
+    $i = [ordered]@{ Path = $exe; SizeBytes = 0; Modified = ''; Product = ''; FileVersion = ''; Company = ''; Description = ''; Arch = ''; Signature = ''; AppCompat = ''; GpuPreference = '' }
+    try { $fi = Get-Item -LiteralPath $exe -ErrorAction Stop; $i.SizeBytes = [double]$fi.Length; $i.Modified = (Fmt $fi.LastWriteTime) } catch { }
+    try {
+        $vi = [Diagnostics.FileVersionInfo]::GetVersionInfo($exe)
+        $i.Product = [string]$vi.ProductName; $i.FileVersion = [string]$vi.FileVersion; $i.Company = [string]$vi.CompanyName; $i.Description = [string]$vi.FileDescription
+    } catch { }
+    $i.Arch = Get-PeArch $exe
+    try { $sig = Get-AuthenticodeSignature -LiteralPath $exe -ErrorAction Stop; $i.Signature = [string]$sig.Status } catch { $i.Signature = 'could not be read' }
+    foreach ($key in @('HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers', 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers')) {
+        try { $k = Get-Item -LiteralPath $key -ErrorAction Stop; $v = $k.GetValue($exe); if ($v) { $i.AppCompat = ([string]$v).Trim() } } catch { }
+    }
+    try { $k = Get-Item -LiteralPath 'HKCU:\Software\Microsoft\DirectX\UserGpuPreferences' -ErrorAction Stop; $v = $k.GetValue($exe); if ($v) { $i.GpuPreference = [string]$v } } catch { }
+    return $i
+}
+function Get-DxDiagInfo {
+    $r = [ordered]@{ Ran = $false; Ok = $false; DirectX = ''; FeatureLevels = ''; Message = '' }
+    $f = Join-Path $env:TEMP ('MeshalFix_dxdiag_' + [guid]::NewGuid().ToString('N') + '.txt')
+    try {
+        $p = Start-Process -FilePath 'dxdiag.exe' -ArgumentList @('/whql:off', '/t', ('"' + $f + '"')) -PassThru -WindowStyle Hidden -ErrorAction Stop
+        $r.Ran = $true
+        [void]$p.WaitForExit(90000)
+        $prev = -1
+        for ($n = 0; $n -lt 45; $n++) {
+            if (Test-Path -LiteralPath $f) { $len = (Get-Item -LiteralPath $f).Length; if ($len -gt 0 -and $len -eq $prev) { break }; $prev = $len }
+            Start-Sleep -Seconds 1
+        }
+        if (Test-Path -LiteralPath $f) {
+            $txt = [IO.File]::ReadAllText($f)
+            $m = [regex]::Match($txt, '(?im)^[^\r\n:]{1,60}:\s*(DirectX\s+\d+(?:\.\d+)?)\s*$')
+            if ($m.Success) { $r.DirectX = $m.Groups[1].Value.Trim(); $r.Ok = $true }
+            $fl = [regex]::Match($txt, '(?m)^[^\r\n:]{1,60}:\s*(\d{1,2}_\d(?:\s*,\s*\d{1,2}_\d)+)\s*$')
+            if ($fl.Success) { $r.FeatureLevels = $fl.Groups[1].Value.Trim() }
+            if (-not $r.Ok) { $r.Message = 'dxdiag finished but the DirectX version line was not found in its output.' }
+        } else { $r.Message = 'dxdiag did not produce an output file in time.' }
+    } catch { $r.Message = 'dxdiag could not be run: ' + (Fit $_.Exception.Message 120) }
+    finally { try { if (Test-Path -LiteralPath $f) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue } } catch { } }
+    return $r
+}
+function Get-GameReasons($c, [string]$root) {
+    $strong = New-Object System.Collections.ArrayList
+    $weak = New-Object System.Collections.ArrayList
+    $p = [string]$c.Path
+    if ($p) {
+        if ($p -match '(?i)\\steamapps\\common\\') { [void]$strong.Add('installed in a Steam library (steamapps\common)') }
+        if ($p -match '(?i)\\Epic Games\\') { [void]$strong.Add('installed under an Epic Games folder') }
+        if ($p -match '(?i)\\Riot Games\\') { [void]$strong.Add('installed under a Riot Games folder') }
+        if ($p -match '(?i)\\Ubisoft\\') { [void]$strong.Add('installed under a Ubisoft folder') }
+        if ($p -match '(?i)\\(GOG Galaxy\\Games|GOG Games)\\') { [void]$strong.Add('installed under a GOG games folder') }
+        if ($p -match '(?i)\\(EA Games|Origin Games)\\') { [void]$strong.Add('installed under an EA or Origin games folder') }
+        if ($p -match '(?i)\\XboxGames\\') { [void]$strong.Add('installed under XboxGames') }
+        if ($p -match '(?i)\\Games\\' -and $strong.Count -eq 0) { [void]$weak.Add('located in a folder named Games') }
+        if ($root -and $p.StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) { [void]$strong.Add('inside the game folder you entered') }
+    }
+    if ($c.App -match '(?i)-Win(64|32)-Shipping\.exe$') { [void]$strong.Add('Unreal Engine shipping executable naming') }
+    if ($c.Module -match '(?i)^(UnityPlayer|GameAssembly)\.dll$') { [void]$strong.Add('the faulting module is a Unity runtime component') }
+    if ($c.Module -match '(?i)^(nvwgf2um|nvwgf2umx|atidxx64|atidxx32|amdxx64|amdxx32|igd10iumd64|igd12umd64|d3d11|d3d12|dxgi|d3d9)\.dll$') { [void]$weak.Add('the faulting module is a graphics driver or DirectX component (suggestive only)') }
+    return [pscustomobject]@{ Strong = @($strong); Weak = @($weak) }
+}
+
+function Build-GamingFindings($sys, $crash, $disp, $stops, $dx, $targeted, $gameGroups, $otherCount, [int]$hours) {
+    $f = New-Object System.Collections.ArrayList
+    $lab = $(if ($hours -lt 48) { [string]$hours + ' hours' } else { [string][math]::Round($hours / 24) + ' days' })
+    # A + C: game crashes and stability
+    if (-not $crash.AppOk) {
+        [void]$f.Add((New-Finding 'Game crashes' 'Game crash detection' 'UNKNOWN' 'Info' (@('The Application log could not be read completely.') + @($crash.Problems)) 'Run the toolkit as administrator and try again.'))
+    } elseif ($gameGroups.Count -eq 0) {
+        $ev = @('No crash events matched the game-related patterns in the last ' + $lab + ' (the Application log was read successfully).')
+        if ($otherCount -gt 0) { $ev += ([string]$otherCount + ' other application crash event(s) exist but were not classified as game-related. See the Crash and BSOD Analyzer.') }
+        $ev += 'This does not prove games run well. Only crash records were checked.'
+        [void]$f.Add((New-Finding 'Game crashes' 'Game crash detection' 'PASSED' 'Info' $ev ''))
+    } else {
+        foreach ($g in @($gameGroups | Select-Object -First 5)) {
+            $ev = New-Object System.Collections.ArrayList
+            [void]$ev.Add('Program: ' + $g.App + $(if ($g.AppVer) { ' ' + $g.AppVer } else { '' }))
+            [void]$ev.Add('Classified as game-related (' + $g.Likelihood + ') because ' + ((@($g.Reasons)) -join '; ') + '. This is a heuristic.')
+            if ($g.Module) { [void]$ev.Add('Faulting module: ' + $g.Module) }
+            if ($g.Code) { [void]$ev.Add('Exception code: ' + (Show-Code $g.Code) + $(if ($g.CodeText) { ' - ' + $g.CodeText } else { '' })) }
+            [void]$ev.Add([string]$g.Cnt + ' crash(es) from ' + (Fmt $g.First) + ' to ' + (Fmt $g.Last))
+            if ($g.Cnt -ge 2) { [void]$ev.Add('Repeated crash with the same module and exception code: a consistent pattern, not a confirmed root cause.') }
+            $st = 'WARNING'; $sev = 'Low'
+            if ($g.Cnt -ge 3) { $st = 'ISSUE'; $sev = 'Medium' } elseif ($g.Cnt -eq 2) { $sev = 'Medium' }
+            [void]$f.Add((New-Finding 'Game crashes' ($g.App + ' crashed ' + $g.Cnt + ' time(s)') $st $sev $ev 'Verify game files in its launcher, update the game and graphics driver, and test with overlays disabled.'))
+        }
+        $poss = New-Object System.Collections.ArrayList
+        foreach ($g in @($gameGroups | Select-Object -First 5)) {
+            $k = Norm-Hex $g.Code
+            if ($k -eq 'c0000005') { [void]$poss.Add($g.App + ': access violations are often program bugs, but can also involve a graphics driver, overlay or mod, or unstable memory or overclock.') }
+            elseif ($k -eq 'c0000409' -or $k -eq 'c0000374') { [void]$poss.Add($g.App + ': the program or runtime detected memory corruption. Mods, the program itself, or unstable RAM or an overclock can be involved.') }
+            elseif ($k -eq 'c0000135' -or $k -eq 'c000007b') { [void]$poss.Add($g.App + ': this code relates to a missing or mismatched DLL. Check the exact message and the program required runtimes.') }
+            if ($g.ModuleHint -and $g.Module) { [void]$poss.Add($g.App + ' / ' + $g.Module + ': ' + $g.ModuleHint) }
+        }
+        if ($poss.Count -gt 0) { [void]$f.Add((New-Finding 'Game crashes' 'Possible explanations (not confirmed)' 'INFO' 'Info' @($poss | Select-Object -Unique) 'Treat these as leads to test, one change at a time.' 'Possible')) }
+    }
+    # B: compatibility
+    foreach ($g in @($sys.Gpus)) {
+        $ev = @($g.Name + ', driver ' + $g.Driver + $(if ($g.DriverDate) { ' (' + $g.DriverDate.Substring(0, [math]::Min(10, $g.DriverDate.Length)) + ')' } else { '' }))
+        if ([int]$g.ErrorCode -ne 0) { [void]$f.Add((New-Finding 'Gaming' ('Display adapter device error: ' + $g.Name) 'ISSUE' 'Medium' ($ev + @('Windows device error code ' + [string]$g.ErrorCode + ': ' + (Cm-Text ([int]$g.ErrorCode)))) 'Check the adapter in Device Manager and reinstall its driver from the GPU vendor.')) }
+        else { [void]$f.Add((New-Finding 'Gaming' ('Display adapter: ' + $g.Name) 'INFO' 'Info' ($ev + @('Device status: ' + $g.Status)) '')) }
+    }
+    if ($sys.OS) { [void]$f.Add((New-Finding 'Gaming' 'Windows and memory' 'INFO' 'Info' @(($sys.OS.Caption + ' build ' + $sys.OS.Version + $(if ($sys.OS.Ubr) { '.' + $sys.OS.Ubr } else { '' }) + ', ' + $sys.OS.Arch), ('RAM: ' + (SizeText ($sys.OS.TotalRamMB * 1MB)) + ' total, ' + (SizeText ($sys.OS.FreeRamMB * 1MB)) + ' free right now'), 'Hardware figures are information only; they are not evidence of a performance bottleneck.') '')) }
+    if ($dx.Ran -and $dx.Ok) { [void]$f.Add((New-Finding 'Gaming' 'DirectX (reported by dxdiag)' 'INFO' 'Info' @(@($dx.DirectX) + $(if ($dx.FeatureLevels) { @('Feature levels listed: ' + $dx.FeatureLevels) } else { @() })) '')) }
+    elseif ($dx.Ran) { [void]$f.Add((New-Finding 'Gaming' 'DirectX (dxdiag)' 'UNKNOWN' 'Info' @($dx.Message) '')) }
+    else { [void]$f.Add((New-Finding 'Gaming' 'DirectX (dxdiag)' 'NOTCHECKED' 'Info' @('dxdiag was not run in this session.') '')) }
+    # display driver events and GPU stop codes
+    if ($disp.Complete) {
+        $n = 0; foreach ($g in $disp.Groups) { $n += $g.Cnt }
+        if ($n -gt 0) {
+            $ev = @($disp.Groups | Select-Object -First 4 | ForEach-Object { [string]$_.Cnt + ' x ' + $_.Provider + ' (Event ' + [string]$_.Id + '), last ' + (Fmt $_.Last) })
+            $sev = 'Low'; if ($n -ge 3) { $sev = 'Medium' }
+            [void]$f.Add((New-Finding 'Gaming' ('Display driver reset or error events (' + $n + ')') 'WARNING' $sev ($ev + @('A reset is an observation; it does not confirm failing hardware.')) 'If it repeats, update or cleanly reinstall the graphics driver, check temperatures and remove GPU overclocks.'))
+        } else { [void]$f.Add((New-Finding 'Gaming' 'Display driver reset or error events' 'PASSED' 'Info' @('No Display 4101 or NVIDIA/AMD driver Error/Warning events in the last ' + $lab + ' (the System log was read successfully).') '')) }
+    } else { [void]$f.Add((New-Finding 'Gaming' 'Display driver reset or error events' 'UNKNOWN' 'Info' (@('The System log could not be read completely.') + @($disp.Problems)) '')) }
+    if (@($stops).Count -gt 0) {
+        [void]$f.Add((New-Finding 'Gaming' 'Graphics-related bugcheck(s) recorded' 'ISSUE' 'Medium' @($stops | ForEach-Object { (Fmt $_.Time) + '  ' + $_.BugCode + ' ' + $_.BugName }) 'See the Crash and BSOD Analyzer. These stop codes are commonly associated with the graphics driver or GPU but do not by themselves identify the cause.'))
+    }
+    # storage
+    $sd = $env:SystemDrive
+    foreach ($v in @($sys.Volumes)) {
+        if ($v.SizeBytes -le 0) { continue }
+        $isTarget = ($targeted -and $targeted.Folder -and $targeted.Folder.StartsWith($v.Drive, [StringComparison]::OrdinalIgnoreCase))
+        if ($isTarget -or $v.Drive -ieq $sd) {
+            $pct = [math]::Round(100.0 * $v.FreeBytes / $v.SizeBytes, 1)
+            $st = 'INFO'; $sev = 'Info'; $nx = ''
+            if ($v.FreeBytes -lt 10GB -or $pct -lt 5) { $st = 'WARNING'; $sev = 'Low'; $nx = 'Low free space can interfere with game updates, shader caches and virtual memory. Free some space on this drive.' }
+            [void]$f.Add((New-Finding 'Gaming' ('Free space on ' + $v.Drive + $(if ($isTarget) { ' (game drive)' } else { '' })) $st $sev @((SizeText $v.FreeBytes) + ' free of ' + (SizeText $v.SizeBytes) + ' (' + $pct + ' percent)') $nx))
+        }
+    }
+    # D: targeted
+    if ($targeted -and $targeted.Provided) {
+        if ($targeted.Exists) {
+            $ev = New-Object System.Collections.ArrayList
+            if ($targeted.Info) {
+                $x = $targeted.Info
+                [void]$ev.Add($x.Path)
+                [void]$ev.Add('Size ' + (SizeText $x.SizeBytes) + ', modified ' + $x.Modified + ', architecture ' + $x.Arch)
+                if ($x.Product -or $x.FileVersion) { [void]$ev.Add('Product: ' + $x.Product + '  File version: ' + $x.FileVersion + '  Publisher: ' + $x.Company) }
+                [void]$ev.Add('Digital signature status: ' + $x.Signature + '. This does not verify game-file integrity.')
+                if ($x.AppCompat) { [void]$ev.Add('Compatibility settings applied to this executable: ' + $x.AppCompat) }
+                if ($x.GpuPreference) { [void]$ev.Add('Windows graphics preference for this executable: ' + $x.GpuPreference) }
+                if ($sys.OS -and $sys.OS.Arch -match '32' -and $x.Arch -eq 'x64') { [void]$ev.Add('This is a 64-bit program on a 32-bit Windows installation, so it cannot run.') }
+            }
+            [void]$ev.Add([string]$targeted.CrashMatches + ' crash record(s) in the window match this game folder or executable.')
+            [void]$f.Add((New-Finding 'Gaming' 'Targeted game inspection' 'INFO' 'Info' $ev ''))
+        } else { [void]$f.Add((New-Finding 'Gaming' 'Targeted game inspection' 'UNKNOWN' 'Info' @('The path you entered was not found: ' + $targeted.Input) 'Check the path and try again.')) }
+    }
+    [void]$f.Add((New-Finding 'Gaming' 'Game file integrity' 'NOTCHECKED' 'Info' @('MeshalFix has no supported way to verify game files for every launcher, so this was not checked.') 'Use the launcher own verify function (for example Verify integrity of game files in Steam).'))
+    [void]$f.Add((New-Finding 'Gaming' 'Performance (FPS, stutter, frametime)' 'NOTCHECKED' 'Info' @('This tool does not measure frame rate or frametimes, so low FPS or stuttering cannot be diagnosed from this data.') 'Use an in-game or third-party performance overlay while reproducing the problem.'))
+    return @($f)
+}
+
+function Do-Gaming([int]$hours, [bool]$runDx, [string]$gamePath, $pickedExe) {
+    $since = (Get-Date).AddHours(-1 * $hours)
+    Line '  [1/5] Reading system and GPU information...' 'Cyan'
+    $sys = Get-SystemSummary
+    Line '  [2/5] Looking for game-related crashes...' 'Cyan'
+    $crash = Collect-Crashes $since
+    Line '  [3/5] Looking for display driver events...' 'Cyan'
+    $de = Get-LogEvents -Logs @('System') -Since $since -Levels @(2, 3) -Max 3000
+    $dev = @($de.Events | Where-Object { $_.Provider -eq 'Display' -or $_.Provider -match '^(nvlddmkm|amdkmdag)$' })
+    $disp = [pscustomobject]@{ Groups = @(Group-Events $dev); Complete = ($de.Problems.Count -eq 0); Problems = @($de.Problems) }
+    Line '  [4/5] Preparing DirectX and game information...' 'Cyan'
+    $dx = [pscustomobject]@{ Ran = $false; Ok = $false; DirectX = ''; FeatureLevels = ''; Message = '' }
+    if ($runDx) { Line '        Running dxdiag (up to about a minute)...' 'DarkGray'; $dx = [pscustomobject](Get-DxDiagInfo) }
+    $targeted = $null
+    $root = ''
+    if ($gamePath) {
+        $p = $gamePath.Trim().Trim('"')
+        $targeted = [pscustomobject]@{ Provided = $true; Input = $p; Exists = $false; Folder = ''; Exe = ''; Info = $null; CrashMatches = 0 }
+        if (Test-Path -LiteralPath $p) {
+            $targeted.Exists = $true
+            $it = Get-Item -LiteralPath $p
+            if ($it.PSIsContainer) { $targeted.Folder = $it.FullName } else { $targeted.Folder = $it.DirectoryName; $targeted.Exe = $it.FullName }
+            if ($pickedExe) { $targeted.Exe = [string]$pickedExe }
+            $root = $targeted.Folder
+            if ($targeted.Exe) { $targeted.Info = Get-ExeInfo $targeted.Exe }
+        }
+    }
+    Line '  [5/5] Evaluating...' 'Cyan'
+    $gmap = @{}; $other = 0
+    foreach ($c in $crash.AppCrashes) {
+        $rs = Get-GameReasons $c $root
+        $inRoot = ($root -and $c.Path -and $c.Path.StartsWith($root, [StringComparison]::OrdinalIgnoreCase))
+        if ($inRoot -and $targeted) { $targeted.CrashMatches = $targeted.CrashMatches + 1 }
+        if ($rs.Strong.Count -eq 0) { $other++; continue }
+        $k = (($c.App + '|' + $c.Module + '|' + $c.Code)).ToLowerInvariant()
+        if (-not $gmap.ContainsKey($k)) {
+            $gmap[$k] = [pscustomobject]@{ App = $c.App; AppVer = $c.AppVer; Module = $c.Module; Code = $c.Code; CodeText = (Get-ExcText $c.Code); ModuleHint = (Get-ModuleHint $c.Module); Path = $c.Path; Likelihood = 'likely'; Reasons = @($rs.Strong + $rs.Weak); Cnt = 0; First = $c.Time; Last = $c.Time }
+        }
+        $g = $gmap[$k]; $g.Cnt = $g.Cnt + 1
+        if ($c.Time -lt $g.First) { $g.First = $c.Time }
+        if ($c.Time -gt $g.Last) { $g.Last = $c.Time }
+    }
+    $gameGroups = @(@($gmap.Values) | Sort-Object @{ Expression = { $_.Cnt }; Descending = $true }, @{ Expression = { $_.Last }; Descending = $true })
+    $stops = @($crash.Incidents | Where-Object { (Norm-Hex $_.BugCode) -match '^(116|117|119|141)$' })
+    $findings = @(Build-GamingFindings $sys $crash $disp $stops $dx $targeted $gameGroups $other $hours)
+    $ov = Get-Overall $findings
+    $obj = [ordered]@{
+        Module = 'gaming'; Generated = (Fmt (Get-Date)); WindowHours = $hours; Complete = ($crash.AppOk -and $disp.Complete)
+        Gpus = @($sys.Gpus); OS = $sys.OS; Volumes = @($sys.Volumes); DirectX = $dx
+        GameCrashGroups = @($gameGroups | Select-Object -First 30 | ForEach-Object { [pscustomobject]@{ App = $_.App; AppVer = $_.AppVer; Module = $_.Module; Code = $_.Code; CodeText = $_.CodeText; ModuleHint = $_.ModuleHint; Path = $_.Path; Likelihood = $_.Likelihood; Reasons = @($_.Reasons); Count = $_.Cnt; First = (Fmt $_.First); Last = (Fmt $_.Last) } })
+        OtherAppCrashes = $other; DisplayEvents = @($disp.Groups | Select-Object -First 10 | ForEach-Object { Group-ToRecord $_ })
+        Targeted = $targeted; Findings = $findings; Overall = [ordered]@{ Status = $ov.Status; Text = $ov.Text }
+    }
+    [void](Save-Session 'gaming' $obj)
+    Log ('Gaming diagnostics: ' + $gameGroups.Count + ' game crash groups, ' + $findings.Count + ' findings')
+    return [pscustomobject]@{ Findings = $findings; Overall = $ov }
+}
+function Run-Gaming {
+    Head 'GAMING DIAGNOSTICS'
+    Line '  Looks for game crashes and relevant system evidence. It does not tune anything and does not measure FPS.' 'Gray'
+    Blank
+    $win = Pick-Window 3
+    Blank
+    $runDx = Ask-YN '  Collect DirectX information with dxdiag? (read-only, can take up to a minute)'
+    $gamePath = ''; $picked = $null
+    if (Ask-YN '  Inspect a specific game? You can enter a game .exe or a game folder') {
+        $gamePath = (Read-Host '  Path to the game .exe or folder').Trim().Trim('"')
+        if ($gamePath -and (Test-Path -LiteralPath $gamePath) -and (Get-Item -LiteralPath $gamePath).PSIsContainer) {
+            $skip = '^(unins\w*|uninst\w*|crashreport\w*|crashpad\w*|crashhandler\w*|vcredist\w*|vc_redist\w*|dxsetup|dxwebsetup|dotnetfx\w*|setup\w*|install\w*|redist\w*|ue4prereq\w*|easyanticheat\w*|eac\w*|beservice\w*|battleye\w*|updater\w*|helper\w*|7z\w*|handler)$'
+            $exes = @(Get-ChildItem -LiteralPath $gamePath -Filter '*.exe' -File -Recurse -Depth 2 -ErrorAction SilentlyContinue | Where-Object { $_.BaseName -notmatch $skip } | Sort-Object Length -Descending | Select-Object -First 8)
+            if ($exes.Count -gt 0) {
+                Blank
+                Line '  Executables found in that folder (largest first):' 'Yellow'
+                for ($i = 0; $i -lt $exes.Count; $i++) { Line ('    [' + ($i + 1) + '] ' + $exes[$i].FullName) 'Gray' }
+                $a = (Read-Host '  Pick a number to inspect, or press Enter to inspect the folder only').Trim()
+                $n = 0
+                if ([int]::TryParse($a, [ref]$n) -and $n -ge 1 -and $n -le $exes.Count) { $picked = $exes[$n - 1].FullName }
+            } else { Line '  No executables were found within two levels of that folder.' 'Yellow' }
+        }
+    }
+    Blank
+    $r = Do-Gaming $win.Hours $runDx $gamePath $picked
+    Head 'GAMING DIAGNOSTICS'
+    Line ('  Window: ' + $win.Label) 'Gray'
+    Line '  Items marked "possible explanation" are leads, not confirmed causes.' 'DarkGray'
+    Show-Findings $r.Findings
+    Show-Overall $r.Overall $r.Findings
+    Offer-Export
+}
+
+# ------------------------------------------------------------ HTML report
+function StCls([string]$st) { return ('st-' + ([string]$st).ToLowerInvariant()) }
+function Hx-Findings($list) {
+    $sb = New-Object System.Text.StringBuilder
+    $arr = @($list | Where-Object { $_ })
+    if ($arr.Count -eq 0) { return '<p class="muted">No findings.</p>' }
+    foreach ($x in $arr) {
+        $c = StCls $x.Status
+        [void]$sb.Append('<div class="finding ' + $c + '"><div class="fh"><span class="badge ' + $c + '">' + (Esc (StatusText $x.Status)) + '</span> <strong>' + (Esc $x.Title) + '</strong>')
+        if (($x.Status -eq 'ISSUE' -or $x.Status -eq 'WARNING') -and $x.Severity -and $x.Severity -ne 'Info') { [void]$sb.Append(' <span class="sev">severity: ' + (Esc $x.Severity) + '</span>') }
+        if ($x.Kind -eq 'Possible') { [void]$sb.Append(' <span class="sev">possible explanation, not confirmed</span>') }
+        [void]$sb.Append('</div>')
+        $ev = @($x.Evidence | Where-Object { $_ })
+        if ($ev.Count -gt 0) { [void]$sb.Append('<ul>'); foreach ($e in $ev) { [void]$sb.Append('<li>' + (Esc $e) + '</li>') }; [void]$sb.Append('</ul>') }
+        if ($x.Next) { [void]$sb.Append('<p class="next"><b>Next step:</b> ' + (Esc $x.Next) + '</p>') }
+        [void]$sb.Append('</div>')
+    }
+    return $sb.ToString()
+}
+function Hx-KV($pairs) {
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append('<table class="kv">')
+    foreach ($p in $pairs) { [void]$sb.Append('<tr><th>' + (Esc $p[0]) + '</th><td>' + (Esc $p[1]) + '</td></tr>') }
+    [void]$sb.Append('</table>')
+    return $sb.ToString()
+}
+function Hx-SystemSection($sys) {
+    if ($null -eq $sys) { return '<p class="muted">System information was not collected.</p>' }
+    $sb = New-Object System.Text.StringBuilder
+    $pairs = New-Object System.Collections.ArrayList
+    if ($sys.OS) {
+        $o = $sys.OS
+        [void]$pairs.Add(@('Windows', ([string]$o.Caption + $(if ($o.DisplayVersion) { '  ' + $o.DisplayVersion } else { '' }))))
+        [void]$pairs.Add(@('Build', ([string]$o.Version + $(if ($o.Ubr) { '.' + $o.Ubr } else { '' }) + ', ' + $o.Arch + $(if ($o.Edition) { ', edition ID ' + $o.Edition } else { '' }))))
+        [void]$pairs.Add(@('Installed on', [string]$o.InstallDate))
+        [void]$pairs.Add(@('Last boot', [string]$o.LastBoot))
+    } else { [void]$pairs.Add(@('Windows', 'Could not be read')) }
+    if ($sys.Hardware) {
+        $h = $sys.Hardware
+        [void]$pairs.Add(@('Computer', ([string]$h.Manufacturer + ' ' + [string]$h.Model)))
+        [void]$pairs.Add(@('Processor', ([string]$h.Cpu + ' (' + $h.Cores + ' cores, ' + $h.Threads + ' threads)')))
+        [void]$pairs.Add(@('Memory', ((SizeText $h.RamBytes) + $(if ($h.RamModules -gt 0) { ' in ' + $h.RamModules + ' module(s) ' + $h.RamSpeed } else { '' }))))
+        [void]$pairs.Add(@('BIOS', [string]$h.Bios))
+    }
+    foreach ($g in @($sys.Gpus)) {
+        [void]$pairs.Add(@('Display adapter', ([string]$g.Name + ', driver ' + $g.Driver + $(if ($g.DriverDate) { ' (' + ([string]$g.DriverDate).Substring(0, [math]::Min(10, ([string]$g.DriverDate).Length)) + ')' } else { '' }) + $(if ($g.NvidiaBranded) { ', NVIDIA version ' + $g.NvidiaBranded + ' (derived)' } else { '' }) + ', status ' + $g.Status)))
+    }
+    foreach ($v in @($sys.Volumes)) {
+        $pct = 0; if ($v.SizeBytes -gt 0) { $pct = [math]::Round(100.0 * $v.FreeBytes / $v.SizeBytes, 1) }
+        [void]$pairs.Add(@(('Volume ' + $v.Drive), ((SizeText $v.SizeBytes) + ' total, ' + (SizeText $v.FreeBytes) + ' free (' + $pct + ' percent), ' + $v.Fs)))
+    }
+    foreach ($d in @($sys.Disks)) { [void]$pairs.Add(@('Drive', ([string]$d.Name + ' (' + $d.Media + ', ' + (SizeText $d.SizeBytes) + '), Windows status ' + $d.Health))) }
+    [void]$sb.Append((Hx-KV $pairs))
+    return $sb.ToString()
+}
+function Hx-EventSection($m, [string]$label) {
+    if ($null -eq $m) { return '<p class="muted">' + (Esc $label) + ': not run in this session.</p>' }
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append('<p><b>' + (Esc $label) + '</b> - collected ' + (Esc $m.Generated) + ', window: last ' + (Esc $m.WindowHours) + ' hours, logs: ' + (Esc $m.Logs) + ', levels: ' + (Esc $m.Levels) + '.</p>')
+    [void]$sb.Append('<p>Events found: ' + (Esc $m.TotalEvents) + ' (Critical ' + (Esc $m.Critical) + ', Error ' + (Esc $m.Errors) + ', Warning ' + (Esc $m.Warnings) + ') in ' + (Esc $m.GroupCount) + ' group(s). ')
+    if ($m.Complete) { [void]$sb.Append('Scan status: <span class="badge st-passed">completed</span>') } else { [void]$sb.Append('Scan status: <span class="badge st-unknown">incomplete - zero results would not mean zero events</span>') }
+    [void]$sb.Append('</p>')
+    foreach ($p in @($m.Problems)) { [void]$sb.Append('<p class="warnline">' + (Esc $p) + '</p>') }
+    if ($m.Limited) { [void]$sb.Append('<p class="warnline">Results were limited to the newest 1500 events per log; the real number may be higher.</p>') }
+    $gr = @($m.Groups)
+    if ($gr.Count -eq 0) {
+        if ($m.Complete) { [void]$sb.Append('<p>No matching events were found. Both logs were read successfully.</p>') }
+        else { [void]$sb.Append('<p>No events could be listed because the scan did not complete.</p>') }
+    } else {
+        [void]$sb.Append('<div class="scroll"><table><thead><tr><th>Level</th><th>Count</th><th>Last seen</th><th>Source (Event ID)</th><th>Message</th></tr></thead><tbody>')
+        foreach ($g in @($gr | Select-Object -First 40)) {
+            $lv = ([string]$g.Level).ToLowerInvariant()
+            [void]$sb.Append('<tr><td><span class="lvl lvl-' + (Esc $lv) + '">' + (Esc $g.Level) + '</span></td><td>' + (Esc $g.Count) + '</td><td>' + (Esc $g.Last) + '</td><td>' + (Esc $g.Provider) + ' (' + (Esc $g.Id) + ')<br><span class="muted">' + (Esc $g.Log) + '</span></td><td><details><summary>' + (Esc (OneLine ([string]$g.Message) 110)) + '</summary><pre>' + (Esc $g.Message) + '</pre>')
+            if ($g.Known) {
+                [void]$sb.Append('<p><b>' + (Esc $g.KbTitle) + '</b><br>' + (Esc $g.KbMeans) + '</p><p><b>Possible causes (not confirmed):</b> ' + (Esc $g.KbCauses) + '</p><p><b>Next steps:</b> ' + (Esc $g.KbNext) + '</p>')
+            } else { [void]$sb.Append('<p class="muted">No built-in explanation exists for this event; none is guessed.</p>') }
+            [void]$sb.Append('</details></td></tr>')
+        }
+        [void]$sb.Append('</tbody></table></div>')
+        if ($gr.Count -gt 40) { [void]$sb.Append('<p class="muted">Only the first 40 groups are shown.</p>') }
+    }
+    return $sb.ToString()
+}
+function Hx-CrashSection($c) {
+    if ($null -eq $c) { return '<p class="muted">Crash and BSOD analysis was not run in this session.</p>' }
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append('<p>Collected ' + (Esc $c.Generated) + ', window: last ' + (Esc $c.WindowHours) + ' hours. Scan status: ' + $(if ($c.Complete) { '<span class="badge st-passed">completed</span>' } else { '<span class="badge st-unknown">incomplete</span>' }) + '</p>')
+    foreach ($p in @($c.Problems)) { [void]$sb.Append('<p class="warnline">' + (Esc $p) + '</p>') }
+    [void]$sb.Append('<h3>Application crashes</h3>')
+    $ag = @($c.AppGroups)
+    if ($ag.Count -eq 0) { [void]$sb.Append('<p>None recorded in this window.</p>') }
+    else {
+        [void]$sb.Append('<div class="scroll"><table><thead><tr><th>Count</th><th>Program</th><th>Faulting module</th><th>Exception code</th><th>First / last</th></tr></thead><tbody>')
+        foreach ($g in $ag) {
+            [void]$sb.Append('<tr><td>' + (Esc $g.Count) + '</td><td>' + (Esc $g.App) + ' ' + (Esc $g.AppVer) + '<br><span class="muted">' + (Esc $g.Kind) + '</span></td><td>' + (Esc $g.Module) + $(if ($g.ModuleHint) { '<details><summary>about this module</summary>' + (Esc $g.ModuleHint) + '</details>' } else { '' }) + '</td><td>' + (Esc (Show-Code ([string]$g.Code))) + $(if ($g.CodeText) { '<br><span class="muted">' + (Esc $g.CodeText) + '</span>' } else { '' }) + '</td><td>' + (Esc $g.First) + '<br>' + (Esc $g.Last) + '</td></tr>')
+        }
+        [void]$sb.Append('</tbody></table></div>')
+    }
+    [void]$sb.Append('<h3>Unexpected restarts and bugchecks</h3>')
+    $ic = @($c.Incidents)
+    if ($ic.Count -eq 0) { [void]$sb.Append('<p>None recorded in this window.</p>') }
+    else {
+        foreach ($i in $ic) {
+            [void]$sb.Append('<details class="inc"><summary><b>' + (Esc $i.Time) + '</b> - ' + (Esc $i.Type) + $(if ($i.BugCode) { ' - stop code ' + (Esc $i.BugCode) + ' ' + (Esc $i.BugName) } else { ' - no stop code recorded' }) + '</summary>')
+            if ($i.BugParams) { [void]$sb.Append('<p>Parameters: ' + (Esc $i.BugParams) + '</p>') }
+            if ($i.BugHint) { [void]$sb.Append('<p>' + (Esc $i.BugHint) + '</p>') }
+            if ($i.DumpPath) { [void]$sb.Append('<p>Dump named in the event: ' + (Esc $i.DumpPath) + ($(if ($i.DumpExists) { ' (file exists)' } else { ' (file not found)' })) + '</p>') }
+            foreach ($d in @($i.Dumps)) { [void]$sb.Append('<p>Possible dump by timestamp: ' + (Esc $d) + '</p>') }
+            [void]$sb.Append('<ul>'); foreach ($r in @($i.Related)) { [void]$sb.Append('<li>' + (Esc $r) + '</li>') }; [void]$sb.Append('</ul>')
+            [void]$sb.Append('<p><b>Is the evidence sufficient?</b> ' + (Esc $i.Evidence) + '</p></details>')
+        }
+    }
+    [void]$sb.Append('<h3>Dump files</h3>')
+    $dm = @($c.Dumps)
+    if ($dm.Count -eq 0) { [void]$sb.Append('<p>No dump files found in the standard locations.</p>') }
+    else {
+        [void]$sb.Append('<div class="scroll"><table><thead><tr><th>Type</th><th>Path</th><th>Size</th><th>Modified</th></tr></thead><tbody>')
+        foreach ($d in $dm) { [void]$sb.Append('<tr><td>' + (Esc $d.Kind) + '</td><td>' + (Esc $d.Path) + '</td><td>' + (Esc $d.Size) + '</td><td>' + (Esc $d.Modified) + '</td></tr>') }
+        [void]$sb.Append('</tbody></table></div>')
+    }
+    [void]$sb.Append('<p class="muted">Only dump names, sizes and dates were inspected. Dump contents were not analyzed; that needs a debugger such as WinDbg.')
+    if ($c.DumpSettings -and $c.DumpSettings.Known) { [void]$sb.Append(' Crash dump setting (read only): ' + (Esc $c.DumpSettings.Type) + '.') }
+    [void]$sb.Append('</p>')
+    return $sb.ToString()
+}
+function Hx-RelSection($m) {
+    if ($null -eq $m) { return '<p class="muted">Reliability history was not collected in this session.</p>' }
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append('<p>Collected ' + (Esc $m.Generated) + ', window: last ' + (Esc $m.WindowHours) + ' hours.<br>Source: <b>' + (Esc $m.Source) + '</b></p>')
+    if ($m.Note) { [void]$sb.Append('<p class="warnline">' + (Esc $m.Note) + '</p>') }
+    foreach ($p in @($m.Problems)) { [void]$sb.Append('<p class="warnline">' + (Esc $p) + '</p>') }
+    if ($m.Limited) { [void]$sb.Append('<p class="warnline">Results were limited; older records in the window may not be listed.</p>') }
+    $st = @($m.Stability)
+    if ($st.Count -gt 0) {
+        [void]$sb.Append('<h3>Stability index (computed by Windows, scale 1 to 10)</h3><table><thead><tr><th>Date</th><th>Index</th></tr></thead><tbody>')
+        foreach ($s in $st) { [void]$sb.Append('<tr><td>' + (Esc $s.Time) + '</td><td>' + (Esc $s.Index) + '</td></tr>') }
+        [void]$sb.Append('</tbody></table>')
+    }
+    $cl = @($m.Clusters)
+    if ($cl.Count -gt 0) {
+        [void]$sb.Append('<h3>Related incidents</h3><p class="muted">Records close together in time. This is a time correlation only, not proof of cause.</p>')
+        foreach ($c in $cl) { [void]$sb.Append('<details class="inc"><summary>' + (Esc $c.Start) + ' to ' + (Esc $c.End) + ' - ' + (Esc $c.Count) + ' records</summary><ul>'); foreach ($l in @($c.Lines)) { [void]$sb.Append('<li>' + (Esc $l) + '</li>') }; [void]$sb.Append('</ul></details>') }
+    }
+    $rc = @($m.Records)
+    [void]$sb.Append('<h3>Timeline (' + (Esc $m.TotalRecords) + ' record(s) in the window)</h3>')
+    if ($rc.Count -eq 0) { [void]$sb.Append('<p>No records to list.</p>') }
+    else {
+        [void]$sb.Append('<div class="scroll"><table><thead><tr><th>Date and time</th><th>Type</th><th>Component</th><th>Summary</th></tr></thead><tbody>')
+        foreach ($r in @($rc | Select-Object -First 150)) {
+            [void]$sb.Append('<tr class="' + $(if ($r.IsFailure) { 'rowfail' } else { '' }) + '"><td>' + (Esc $r.Time) + '</td><td>' + (Esc $r.Category) + '</td><td>' + (Esc $r.Component) + '</td><td><details><summary>' + (Esc $r.Summary) + '</summary><pre>' + (Esc $r.Details) + '</pre></details></td></tr>')
+        }
+        [void]$sb.Append('</tbody></table></div>')
+        if ($rc.Count -gt 150) { [void]$sb.Append('<p class="muted">Only the newest 150 records are shown.</p>') }
+    }
+    return $sb.ToString()
+}
+function Hx-GamingSection($m) {
+    if ($null -eq $m) { return '<p class="muted">Gaming diagnostics were not run in this session.</p>' }
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.Append('<p>Collected ' + (Esc $m.Generated) + ', window: last ' + (Esc $m.WindowHours) + ' hours. Observations and possible explanations are labeled separately.</p>')
+    [void]$sb.Append((Hx-Findings $m.Findings))
+    $gg = @($m.GameCrashGroups)
+    if ($gg.Count -gt 0) {
+        [void]$sb.Append('<h3>Game-related crash groups</h3><div class="scroll"><table><thead><tr><th>Count</th><th>Program</th><th>Module</th><th>Exception</th><th>First / last</th><th>Why classified as a game</th></tr></thead><tbody>')
+        foreach ($g in $gg) { [void]$sb.Append('<tr><td>' + (Esc $g.Count) + '</td><td>' + (Esc $g.App) + '<br><span class="muted">' + (Esc $g.Path) + '</span></td><td>' + (Esc $g.Module) + '</td><td>' + (Esc (Show-Code ([string]$g.Code))) + '<br><span class="muted">' + (Esc $g.CodeText) + '</span></td><td>' + (Esc $g.First) + '<br>' + (Esc $g.Last) + '</td><td>' + (Esc ((@($g.Reasons)) -join '; ')) + '</td></tr>') }
+        [void]$sb.Append('</tbody></table></div>')
+    }
+    return $sb.ToString()
+}
+function Event-SummaryFinding($m, [string]$name) {
+    if ($null -eq $m) { return $null }
+    if (-not $m.Complete) { return (New-Finding 'Events' ($name + ': Critical and Error events') 'UNKNOWN' 'Info' (@('The scan was incomplete. Zero results would not mean zero events.') + @($m.Problems)) 'Run the toolkit as administrator and try again.') }
+    if ([int]$m.TotalEvents -eq 0) { return (New-Finding 'Events' ($name + ': Critical and Error events') 'PASSED' 'Info' @('No matching events in the last ' + [string]$m.WindowHours + ' hours (both logs were read successfully).') '') }
+    return (New-Finding 'Events' ($name + ': ' + [string]$m.TotalEvents + ' event(s) in ' + [string]$m.GroupCount + ' group(s)') 'INFO' 'Info' @('Window: last ' + [string]$m.WindowHours + ' hours. Levels: ' + $m.Levels + '.', 'Events are observations. An isolated error is not a confirmed root cause.') 'Review the event table in this report or the System Error Analyzer.')
+}
+
+function Build-ReportHtml([bool]$basic) {
+    $health = Load-Session 'health'; $errors = Load-Session 'errors'; $recent = Load-Session 'recent'
+    $crash = Load-Session 'crash'; $rel = Load-Session 'reliability'; $game = Load-Session 'gaming'
+    $sys = $null
+    if ($health -and $health.System) { $sys = $health.System }
+    elseif ($basic) { $sys = Load-Session 'basic_system' }
+    if ($null -eq $sys) { try { $sys = Get-SystemSummary } catch { $sys = $null } }
+
+    $all = New-Object System.Collections.ArrayList
+    foreach ($m in @($health, $crash, $rel, $game)) { if ($m -and $m.Findings) { foreach ($x in @($m.Findings)) { [void]$all.Add($x) } } }
+    foreach ($pair in @(@($errors, 'System Error Analyzer'), @($recent, 'Recent events'))) { $fe = Event-SummaryFinding $pair[0] $pair[1]; if ($fe) { [void]$all.Add($fe) } }
+    $ov = Get-Overall @($all)
+    $when = Get-Date
+
+    # recommendations (from Issue and Warning findings, most severe first, unique)
+    $recs = New-Object System.Collections.ArrayList
+    $cand = @($all | Where-Object { ($_.Status -eq 'ISSUE' -or $_.Status -eq 'WARNING') -and $_.Next } | Sort-Object @{ Expression = { SevRank $_.Severity }; Descending = $true })
+    foreach ($x in $cand) { if (-not $recs.Contains([string]$x.Next)) { [void]$recs.Add([string]$x.Next) } }
+
+    # limitations and checks not performed
+    $lim = New-Object System.Collections.ArrayList
+    if ($basic) { [void]$lim.Add('This is a BASIC report. Only a system summary and the last 24 hours of Critical/Error events were collected. No full diagnostics were run.') }
+    if (-not $health) { [void]$lim.Add('System Health Report: not run in this session.') }
+    elseif ($health.Integrity) {
+        if (-not $health.Integrity.Dism) { [void]$lim.Add('DISM CheckHealth was not run: component store health is unknown.') }
+        if (-not $health.Integrity.Sfc) { [void]$lim.Add('SFC verify-only was not run: the state of protected system files is unknown.') }
+    }
+    if (-not $errors) { [void]$lim.Add('System Error Analyzer: not run in this session.') }
+    if (-not $recent) { [void]$lim.Add('Recent Critical/Error events (24 hours): not run in this session.') }
+    if (-not $crash) { [void]$lim.Add('Crash and BSOD Analyzer: not run in this session.') }
+    if (-not $rel) { [void]$lim.Add('Reliability History: not run in this session.') }
+    if (-not $game) { [void]$lim.Add('Gaming Diagnostics: not run in this session.') }
+    foreach ($pair in @(@($errors, 'System Error Analyzer'), @($recent, 'Recent events'), @($crash, 'Crash and BSOD Analyzer'), @($rel, 'Reliability History'), @($game, 'Gaming Diagnostics'))) {
+        $m = $pair[0]
+        if ($m -and ($m.Complete -eq $false)) { [void]$lim.Add($pair[1] + ': the scan was incomplete, so missing results are not evidence of absence.') }
+        if ($m -and $m.Limited -eq $true) { [void]$lim.Add($pair[1] + ': results were limited by the event cap.') }
+    }
+    [void]$lim.Add('Only the System and Application event logs (and Reliability Monitor data) were read. Other logs were not examined.')
+    [void]$lim.Add('Crash dump contents were not analyzed; only file names, sizes and dates were inspected. A debugger such as WinDbg is needed for that.')
+    [void]$lim.Add('Frame rate, stutter and frametimes are not measured, and game-file integrity is not verified.')
+    [void]$lim.Add('Product keys are never read. User names inside file paths are masked in this report.')
+
+    $css = @(
+        ':root{--bg:#ffffff;--fg:#1d2330;--mut:#5b6475;--card:#f5f7fa;--bd:#dde2ea;--acc:#9a6b00;--ok:#1b7f3b;--bad:#c62828;--warn:#a85d00;--unk:#7b3fa0;--nc:#59616f;--inf:#0b6a9a}',
+        '@media (prefers-color-scheme:dark){:root{--bg:#14171d;--fg:#e6e9ef;--mut:#9aa3b2;--card:#1c2028;--bd:#2c323d;--acc:#e0b84c;--ok:#4cc27a;--bad:#ff6b6b;--warn:#f0b04a;--unk:#c08be0;--nc:#98a0ad;--inf:#5bb5e6}}',
+        '*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.5 "Segoe UI",Arial,sans-serif}',
+        'header{padding:28px 32px;border-bottom:3px solid var(--acc);background:var(--card)}header h1{margin:0;font-size:26px}header .brand{color:var(--acc);font-weight:700;letter-spacing:.08em;font-size:13px}',
+        'main{max-width:1100px;margin:0 auto;padding:20px 24px 60px}section{margin:34px 0}h2{border-bottom:1px solid var(--bd);padding-bottom:6px;font-size:20px}h3{font-size:16px;margin-top:22px}',
+        '.muted{color:var(--mut)}.warnline{color:var(--warn)}nav a{margin-right:14px;color:var(--inf);text-decoration:none}nav{margin:14px 0}',
+        '.overall{border:1px solid var(--bd);border-left:8px solid var(--nc);background:var(--card);padding:14px 18px;border-radius:6px;font-size:17px}',
+        '.overall.st-passed{border-left-color:var(--ok)}.overall.st-issue{border-left-color:var(--bad)}.overall.st-warning{border-left-color:var(--warn)}.overall.st-unknown{border-left-color:var(--unk)}',
+        '.badge{display:inline-block;padding:1px 9px;border-radius:10px;font-size:12px;font-weight:700;color:#fff;background:var(--nc)}',
+        '.badge.st-passed{background:var(--ok)}.badge.st-issue{background:var(--bad)}.badge.st-warning{background:var(--warn)}.badge.st-unknown{background:var(--unk)}.badge.st-info{background:var(--inf)}.badge.st-notchecked{background:var(--nc)}',
+        '.finding{border:1px solid var(--bd);border-left:5px solid var(--nc);background:var(--card);border-radius:6px;padding:10px 14px;margin:10px 0}',
+        '.finding.st-passed{border-left-color:var(--ok)}.finding.st-issue{border-left-color:var(--bad)}.finding.st-warning{border-left-color:var(--warn)}.finding.st-unknown{border-left-color:var(--unk)}.finding.st-info{border-left-color:var(--inf)}',
+        '.sev{font-size:12px;color:var(--mut);margin-left:6px}.finding ul{margin:6px 0 6px 18px;padding:0}.next{margin:6px 0 2px;color:var(--inf)}',
+        'table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid var(--bd);padding:6px 9px;text-align:left;vertical-align:top}th{background:var(--card)}',
+        'table.kv th{width:190px}.scroll{overflow-x:auto}tr.rowfail td{background:rgba(198,40,40,.07)}',
+        'details{margin:2px 0}summary{cursor:pointer}pre{white-space:pre-wrap;word-break:break-word;background:var(--card);border:1px solid var(--bd);padding:8px;border-radius:4px;font:12px/1.4 Consolas,monospace}',
+        '.lvl{font-weight:700}.lvl-critical,.lvl-error{color:var(--bad)}.lvl-warning{color:var(--warn)}details.inc{border:1px solid var(--bd);border-radius:6px;padding:8px 12px;margin:8px 0;background:var(--card)}',
+        'footer{border-top:1px solid var(--bd);padding:18px 32px;color:var(--mut);font-size:13px}',
+        '@media print{details>*{display:block}header{background:none}}'
+    ) -join [Environment]::NewLine
+
+    $sb = New-Object System.Text.StringBuilder
+    [void]$sb.AppendLine('<!DOCTYPE html>')
+    [void]$sb.AppendLine('<html lang="en"><head><meta charset="utf-8">')
+    [void]$sb.AppendLine('<meta name="viewport" content="width=device-width, initial-scale=1">')
+    [void]$sb.AppendLine('<meta http-equiv="Content-Security-Policy" content="default-src ''none''; style-src ''unsafe-inline''; img-src data:">')
+    [void]$sb.AppendLine('<title>MeshalFix System Report</title><style>' + $css + '</style></head><body>')
+    $title = $(if ($basic) { 'System Report (basic)' } else { 'System Diagnostic Report' })
+    [void]$sb.AppendLine('<header><div class="brand">MESHALFIX</div><h1>' + (Esc $title) + '</h1><div class="muted">Generated ' + (Esc (Fmt $when)) + ' - built from diagnostics run during the current toolkit session. Read-only: nothing was changed on this PC.</div></header><main>')
+    [void]$sb.AppendLine('<nav><a href="#status">Status</a><a href="#system">System</a><a href="#health">Health</a><a href="#events">Events</a><a href="#crash">Crashes</a><a href="#reliability">Reliability</a><a href="#gaming">Gaming</a><a href="#next">Next steps</a><a href="#limits">Limitations</a></nav>')
+    if ($basic) { [void]$sb.AppendLine('<p class="warnline"><b>BASIC REPORT.</b> Only data that could be collected at generation time is included. No full diagnostics were run in this session.</p>') }
+    [void]$sb.AppendLine('<section id="status"><h2>Overall diagnostic status</h2><div class="overall ' + (StCls $ov.Status) + '"><span class="badge ' + (StCls $ov.Status) + '">' + (Esc (StatusText $ov.Status)) + '</span> ' + (Esc $ov.Text) + '</div>')
+    $cp = @($all | Where-Object { $_.Status -eq 'PASSED' }).Count; $ci = @($all | Where-Object { $_.Status -eq 'ISSUE' }).Count; $cw = @($all | Where-Object { $_.Status -eq 'WARNING' }).Count
+    $cn = @($all | Where-Object { $_.Status -eq 'NOTCHECKED' }).Count; $cu = @($all | Where-Object { $_.Status -eq 'UNKNOWN' }).Count
+    [void]$sb.AppendLine('<p class="muted">Passed: ' + $cp + ' - Issues detected: ' + $ci + ' - Warnings: ' + $cw + ' - Not checked: ' + $cn + ' - Unable to determine: ' + $cu + '. Not checked and Unable to determine are not passed checks.</p></section>')
+    [void]$sb.AppendLine('<section id="system"><h2>Windows and hardware summary</h2>' + (Hx-SystemSection $sys) + '</section>')
+    [void]$sb.AppendLine('<section id="health"><h2>System health findings</h2>')
+    if ($health) { [void]$sb.AppendLine('<p class="muted">System Health Report collected ' + (Esc $health.Generated) + '.</p>' + (Hx-Findings $health.Findings)) } else { [void]$sb.AppendLine('<p class="muted">The System Health Report was not run in this session.</p>') }
+    [void]$sb.AppendLine('</section>')
+    [void]$sb.AppendLine('<section id="events"><h2>Critical and error event summaries</h2>' + (Hx-EventSection $errors 'System Error Analyzer') + '<h3>Recent Critical/Error events</h3>' + (Hx-EventSection $recent 'Recent events') + '</section>')
+    [void]$sb.AppendLine('<section id="crash"><h2>Crash and BSOD findings</h2>')
+    if ($crash -and $crash.Findings) { [void]$sb.AppendLine((Hx-Findings $crash.Findings)) }
+    [void]$sb.AppendLine((Hx-CrashSection $crash) + '</section>')
+    [void]$sb.AppendLine('<section id="reliability"><h2>Reliability history findings</h2>')
+    if ($rel -and $rel.Findings) { [void]$sb.AppendLine((Hx-Findings $rel.Findings)) }
+    [void]$sb.AppendLine((Hx-RelSection $rel) + '</section>')
+    [void]$sb.AppendLine('<section id="gaming"><h2>Gaming diagnostics findings</h2>' + (Hx-GamingSection $game) + '</section>')
+    [void]$sb.AppendLine('<section id="next"><h2>Recommended next steps</h2>')
+    if ($recs.Count -gt 0) { [void]$sb.AppendLine('<ol>'); foreach ($r in @($recs | Select-Object -First 12)) { [void]$sb.AppendLine('<li>' + (Esc $r) + '</li>') }; [void]$sb.AppendLine('</ol>') }
+    else { [void]$sb.AppendLine('<p>The checks that ran did not identify specific actions.' + $(if ($cn -gt 0 -or $cu -gt 0) { ' Some checks were not performed or could not be determined; consider running them.' } else { '' }) + '</p>') }
+    [void]$sb.AppendLine('<p class="muted">Recommendations come from the findings above. An isolated error is not a confirmed root cause, and nothing here was changed automatically.</p></section>')
+    [void]$sb.AppendLine('<section id="limits"><h2>Limitations and checks not performed</h2><ul>')
+    foreach ($l in $lim) { [void]$sb.AppendLine('<li>' + (Esc $l) + '</li>') }
+    [void]$sb.AppendLine('</ul></section></main><footer>Generated by MeshalFix Toolkit. This report is self-contained and works offline. Data reflects the moments the diagnostics ran.</footer></body></html>')
+    return $sb.ToString()
+}
+
+function Make-Report([bool]$basic) {
+    $stamp = (Get-Date).ToString('yyyyMMdd_HHmmss', $Inv)
+    $base = $(if ($basic) { 'MeshalFix_BasicReport_' } else { 'MeshalFix_SystemReport_' }) + $stamp
+    $marker = Join-Path $SessionDir 'last_report.txt'
+    try { if (Test-Path -LiteralPath $marker) { Remove-Item -LiteralPath $marker -Force -ErrorAction SilentlyContinue } } catch { }
+    $html = $null
+    try { $html = Build-ReportHtml $basic } catch {
+        Line ('  Report generation FAILED while building the page: ' + $_.Exception.Message) 'Red'
+        Log ('Report build failed: ' + $_.Exception.Message)
+        $script:ExitCode = 1
+        return $false
+    }
+    $path = Join-Path $LogDir ($base + '.html')
+    $n = 1
+    while (Test-Path -LiteralPath $path) { $n++; $path = Join-Path $LogDir ($base + '_' + $n + '.html') }
+    try {
+        $fs = New-Object System.IO.FileStream($path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        try { $bytes = $Utf8.GetBytes($html); $fs.Write($bytes, 0, $bytes.Length) } finally { $fs.Close() }
+        $info = Get-Item -LiteralPath $path -ErrorAction Stop
+        $tail = [IO.File]::ReadAllText($path, $Utf8).TrimEnd()
+        if ($info.Length -lt 500 -or -not $tail.EndsWith('</html>')) { throw 'The saved file failed the completeness check.' }
+        [IO.File]::WriteAllText($marker, $path, $Utf8)
+        Line ('  HTML report saved: ' + $path) 'Green'
+        Log ('HTML report saved: ' + $path)
+        return $true
+    } catch {
+        Line ('  Report generation FAILED while saving: ' + $_.Exception.Message) 'Red'
+        Line '  No report was produced, so none will be offered for opening. Your diagnostic results are kept for this session.' 'Yellow'
+        Log ('Report save failed: ' + $_.Exception.Message)
+        try { if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue } } catch { }
+        $script:ExitCode = 1
+        return $false
+    }
+}
+
+function Offer-Export {
+    Blank
+    if (Ask-YN '  Export the results of this session to an HTML report now?') {
+        Blank
+        [void](Make-Report $false)
+    }
+    Blank
+    Wait-Enter 'Press Enter to return to MeshalFix'
+}
+
+function Run-Report {
+    Head 'GENERATE & EXPORT HTML REPORT'
+    $names = [ordered]@{ health = 'System Health Report'; errors = 'System Error Analyzer'; recent = 'Recent Critical/Error events'; crash = 'Crash & BSOD Analyzer'; reliability = 'Reliability History'; gaming = 'Gaming Diagnostics' }
+    $have = New-Object System.Collections.ArrayList
+    foreach ($k in $names.Keys) { if (Test-Path -LiteralPath (Join-Path $SessionDir ($k + '.json'))) { [void]$have.Add($k) } }
+    $needEvents = (-not ($have -contains 'errors') -and -not ($have -contains 'recent'))
+    $missing = New-Object System.Collections.ArrayList
+    if (-not ($have -contains 'health')) { [void]$missing.Add('health') }
+    if ($needEvents) { [void]$missing.Add('errors') }
+    if (-not ($have -contains 'crash')) { [void]$missing.Add('crash') }
+    if (-not ($have -contains 'reliability')) { [void]$missing.Add('reliability') }
+    $choice = ''
+    if ($have.Count -eq 0) {
+        Line '  No diagnostics have been run in this session, so there are no current-session results to export.' 'Yellow'
+        Blank
+        Line '  [1] Run the standard diagnostics now, then generate the report' 'Cyan'
+        Line '      (health without DISM/SFC, errors 7 days, crashes 30 days, reliability 30 days)' 'DarkGray'
+        Line '  [2] Generate a clearly labeled BASIC report (system summary + last 24 hours of Critical/Error events)' 'Cyan'
+        Line '  [0] Cancel' 'Cyan'
+        while ($true) {
+            $a = (Read-Host '  Select').Trim()
+            if ($a -eq '1' -or $a -eq '2' -or $a -eq '0') { $choice = $a; break }
+            Line '  Please enter 1, 2 or 0.' 'Yellow'
+        }
+        if ($choice -eq '0') { $script:ExitCode = 2; return }
+        if ($choice -eq '2') { $choice = 'basic' } else { $choice = 'full' }
+    } else {
+        Line '  Results available from this session:' 'Yellow'
+        foreach ($k in $have) { $m = Load-Session $k; Line ('    ' + $names[$k].PadRight(32) + 'collected ' + $(if ($m) { [string]$m.Generated } else { '(unreadable)' })) 'Gray' }
+        if ($missing.Count -gt 0) {
+            Blank
+            Line '  Not yet run: ' 'Yellow'
+            foreach ($k in $missing) { Line ('    ' + $names[$k]) 'DarkGray' }
+        }
+        Blank
+        Line '  [1] Generate the report from the available results (missing parts are listed as not performed)' 'Cyan'
+        if ($missing.Count -gt 0) { Line '  [2] Run the missing standard diagnostics first, then generate the report' 'Cyan' }
+        Line '  [0] Cancel' 'Cyan'
+        while ($true) {
+            $a = (Read-Host '  Select').Trim()
+            if ($a -eq '0' -or $a -eq '1' -or ($a -eq '2' -and $missing.Count -gt 0)) { $choice = $a; break }
+            Line '  Please enter a number from the list.' 'Yellow'
+        }
+        if ($choice -eq '0') { $script:ExitCode = 2; return }
+        if ($choice -eq '1') { $choice = 'now' } else { $choice = 'full' }
+    }
+    Blank
+    if ($choice -eq 'full') {
+        if ($missing.Count -eq 0 -or ($missing -contains 'health')) { [void](Do-Health $null $null) }
+        if ($missing.Count -eq 0 -or ($missing -contains 'errors')) { $sc = Scan-Events 168 $false; Save-EventSession 'errors' $sc }
+        if ($missing.Count -eq 0 -or ($missing -contains 'crash')) { [void](Do-Crash 720) }
+        if ($missing.Count -eq 0 -or ($missing -contains 'reliability')) { [void](Do-Reliability 720) }
+        Blank
+    }
+    $basic = $false
+    if ($choice -eq 'basic') {
+        $basic = $true
+        Line '  Collecting the basic data...' 'Cyan'
+        $sys = Get-SystemSummary
+        [void](Save-Session 'basic_system' $sys)
+        $sc = Scan-Events 24 $false
+        Save-EventSession 'recent' $sc
+        Blank
+    }
+    Line '  Building the HTML report...' 'Cyan'
+    [void](Make-Report $basic)
+    Blank
+    Wait-Enter 'Press Enter to return to MeshalFix'
+}
+
+# ------------------------------------------------------------ dispatcher
+try {
+    switch ($Mode) {
+        'Health'      { Run-Health }
+        'Errors'      { Run-Errors }
+        'Crash'       { Run-Crash }
+        'Recent'      { Run-Recent }
+        'Reliability' { Run-Reliability }
+        'Gaming'      { Run-Gaming }
+        'Report'      { Run-Report }
+        default       { Line ('  Unknown mode: ' + $Mode) 'Red'; $script:ExitCode = 3; Wait-Enter }
+    }
+} catch {
+    Line ''
+    Line ('  An unexpected error stopped this diagnostic: ' + $_.Exception.Message) 'Red'
+    Line '  Nothing on the PC was changed. The error was written to the toolkit log.' 'Yellow'
+    Log ('Unexpected error in mode ' + $Mode + ': ' + $_.Exception.Message + ' at ' + $_.InvocationInfo.PositionMessage)
+    $script:ExitCode = 1
+    Wait-Enter 'Press Enter to return to MeshalFix'
+}
+exit $script:ExitCode
+#SR_END
 #CL_BEGIN
 # ====================================================================
 #  FixToolkit cleaning engine. Started only by the Cleaning Tools menu.
@@ -5969,3 +8611,304 @@ if ($Mode -eq 'ORPHANS') {
     exit 0
 }
 #CL_END
+#RN_BEGIN
+# ====================================================================
+#  FixToolkit progress runner. Started by the :run_long helper in its own window.
+#  It runs ONE command, shows a loading bar with elapsed time, and lets the user
+#  cancel with the C key (after a Y/N confirmation). The whole process tree is
+#  stopped when the user cancels.
+#  Input (environment): FT_RUN_CMD or FT_RUN_PSMODE=1 (runs the code in FT_PS),
+#    FT_RUN_TITLE, FT_RUN_HINT, FT_RUN_WARN, FT_RUN_NOCANCEL,
+#    FT_RUN_OUT (cleaned output text), FT_RUN_RCFILE (exit code), FT_RUN_LOGFILE
+#  Result: exit code of the command is saved in FT_RUN_RCFILE (1223 = cancelled).
+#  ASCII only on purpose. Progress percent is read from the tool own output.
+# ====================================================================
+$ErrorActionPreference = 'Continue'
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
+try { [Threading.Thread]::CurrentThread.CurrentCulture = [Globalization.CultureInfo]::InvariantCulture } catch { }
+$Inv = [Globalization.CultureInfo]::InvariantCulture
+
+$Title = $env:FT_RUN_TITLE
+if (-not $Title) { $Title = 'Working' }
+$Hint = $env:FT_RUN_HINT
+$Warn = $env:FT_RUN_WARN
+if (-not $Warn) { $Warn = 'The task is stopped before it finishes. You can run it again later.' }
+$CanCancel = ($env:FT_RUN_NOCANCEL -ne '1')
+$OutFile = $env:FT_RUN_OUT
+$RcFile = $env:FT_RUN_RCFILE
+$Cmd = $env:FT_RUN_CMD
+if ($env:FT_RUN_PSMODE -eq '1') {
+    $Cmd = 'powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding $false; & ([scriptblock]::Create($env:FT_PS))"'
+}
+$Raw = Join-Path $env:TEMP ('FixToolkit_run_' + [guid]::NewGuid().ToString('N') + '.raw')
+$BarW = 40
+$Full = [string][char]0x2588
+$Empty = [string][char]0x2591
+$script:Tick = 0
+$script:Pct = -1.0
+$Proc = $null
+$Sw = [Diagnostics.Stopwatch]::StartNew()
+
+function Log([string]$m) {
+    if ($env:FT_RUN_LOGFILE) {
+        try { Add-Content -LiteralPath $env:FT_RUN_LOGFILE -Value ('[' + (Get-Date).ToString('yyyy-MM-dd HH:mm:ss', $Inv) + '] RUNNER - ' + $m) -ErrorAction SilentlyContinue } catch { }
+    }
+}
+
+function Save-Rc([int]$rc) {
+    if ($RcFile) { try { [IO.File]::WriteAllText($RcFile, [string]$rc) } catch { } }
+}
+
+# Writes one full-width line at a fixed row, so the screen never scrolls or flickers
+function Put([int]$row, [string]$text, [string]$color) {
+    if (-not $color) { $color = 'Gray' }
+    try {
+        $w = [Console]::BufferWidth - 1
+        if ($w -lt 20) { $w = 20 }
+        if ($text.Length -gt $w) { $text = $text.Substring(0, $w) }
+        [Console]::SetCursorPosition(0, $row)
+        Write-Host ($text.PadRight($w)) -NoNewline -ForegroundColor $color
+    } catch { }
+}
+
+function Wrap-Words([string]$s, [int]$w) {
+    $out = @()
+    $cur = ''
+    foreach ($word in ($s -split '\s+')) {
+        if (-not $word) { continue }
+        if (($cur.Length + $word.Length + 1) -gt $w) {
+            if ($cur) { $out += $cur }
+            $cur = $word
+        } elseif ($cur) { $cur = $cur + ' ' + $word }
+        else { $cur = $word }
+    }
+    if ($cur) { $out += $cur }
+    return ,$out
+}
+
+function Show-Msg([string[]]$lines, [string]$color) {
+    for ($r = 0; $r -lt 3; $r++) {
+        $t = ''
+        if ($r -lt $lines.Count) { $t = $lines[$r] }
+        Put (7 + $r) $t $color
+    }
+}
+
+function Read-Bytes([int]$Max) {
+    $fs = $null
+    try {
+        $fs = New-Object System.IO.FileStream($Raw, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+        $len = $fs.Length
+        $start = [math]::Max(0, $len - $Max)
+        $start = $start - ($start % 2)
+        [void]$fs.Seek($start, [IO.SeekOrigin]::Begin)
+        $buf = New-Object byte[] ($len - $start)
+        $n = $fs.Read($buf, 0, $buf.Length)
+        if ($n -lt $buf.Length) {
+            $b2 = New-Object byte[] $n
+            [Array]::Copy($buf, $b2, $n)
+            return ,$b2
+        }
+        return ,$buf
+    } catch { return ,(New-Object byte[] 0) }
+    finally { if ($fs) { $fs.Dispose() } }
+}
+
+# sfc writes UTF-16, most other tools write the console code page (UTF-8 here)
+function Decode([byte[]]$b) {
+    if ($b.Length -eq 0) { return '' }
+    $lim = [math]::Min($b.Length, 4096)
+    $z = 0
+    for ($i = 0; $i -lt $lim; $i++) { if ($b[$i] -eq 0) { $z++ } }
+    if (($z * 4) -gt $lim) {
+        $n = $b.Length - ($b.Length % 2)
+        return [Text.Encoding]::Unicode.GetString($b, 0, $n)
+    }
+    return [Text.Encoding]::UTF8.GetString($b)
+}
+
+# Last percent number the tool printed (DISM, SFC, CHKDSK, curl, winget print one). -1 = none yet
+function Get-Pct {
+    $t = Decode (Read-Bytes 8192)
+    if (-not $t) { return -1.0 }
+    $m = [regex]::Matches($t, '(\d{1,3}(?:[.,]\d+)?)\s*%')
+    for ($i = $m.Count - 1; $i -ge 0; $i--) {
+        $s = $m[$i].Groups[1].Value.Replace(',', '.')
+        $v = 0.0
+        if ([double]::TryParse($s, [Globalization.NumberStyles]::Float, $Inv, [ref]$v)) {
+            if (($v -ge 0) -and ($v -le 100)) { return $v }
+        }
+    }
+    return -1.0
+}
+
+function Bar-Text([double]$pct, [int]$tick) {
+    if ($pct -ge 0) {
+        $n = [int][math]::Floor($BarW * $pct / 100.0)
+        if ($n -gt $BarW) { $n = $BarW }
+        if ($n -lt 0) { $n = 0 }
+        return ('[' + ($Full * $n) + ($Empty * ($BarW - $n)) + ']  ' + ([int][math]::Round($pct)).ToString($Inv) + ' %')
+    }
+    $blk = 8
+    $span = $BarW - $blk
+    $cyc = 2 * $span
+    $t = $tick % $cyc
+    if ($t -gt $span) { $t = $cyc - $t }
+    return ('[' + ($Empty * $t) + ($Full * $blk) + ($Empty * ($span - $t)) + ']  working...')
+}
+
+function Draw {
+    Put 3 ('  ' + (Bar-Text $script:Pct $script:Tick)) 'Green'
+    Put 4 ('  Elapsed: ' + $Sw.Elapsed.ToString('hh\:mm\:ss', $Inv)) 'White'
+    $h = ''
+    if ($Hint) { $h = '  Expected: ' + $Hint }
+    Put 5 $h 'DarkGray'
+}
+
+function Idle-Msg {
+    if ($CanCancel) { Show-Msg @('  Press C to cancel this task.') 'DarkGray' }
+    else { Show-Msg @('  This task cannot be cancelled. Please wait until it finishes.') 'DarkGray' }
+}
+
+function Stop-Task {
+    try { $o = & taskkill.exe /f /t /pid $Proc.Id 2>&1 } catch { }
+    try { if (-not $Proc.HasExited) { $Proc.Kill() } } catch { }
+}
+
+# Y = cancel, N or Esc = keep going. The task keeps running while the question is shown.
+function Ask-Cancel {
+    $w = [Console]::BufferWidth - 6
+    if ($w -lt 20) { $w = 20 }
+    $wl = @(Wrap-Words ('Cancel this task? ' + $Warn) $w)
+    $lines = @()
+    foreach ($l in ($wl | Select-Object -First 2)) { $lines += ('  ' + $l) }
+    $lines += '  Press Y to cancel it, or N to keep going.'
+    Show-Msg $lines 'Yellow'
+    $answer = $false
+    while (-not $Proc.HasExited) {
+        if ([Console]::KeyAvailable) {
+            $k = [Console]::ReadKey($true)
+            if ($k.Key -eq [ConsoleKey]::Y) { $answer = $true; break }
+            if (($k.Key -eq [ConsoleKey]::N) -or ($k.Key -eq [ConsoleKey]::Escape)) { break }
+        }
+        $script:Tick++
+        Draw
+        Start-Sleep -Milliseconds 120
+    }
+    if (-not $answer) { Idle-Msg }
+    return $answer
+}
+
+# Removes progress-bar noise: only the last line of each run of percent lines is kept
+function Clean-Text([string]$t) {
+    if (-not $t) { return '' }
+    $t = $t.TrimStart([char]0xFEFF).Replace([string][char]0, '')
+    $out = New-Object System.Collections.ArrayList
+    $prev = $false
+    foreach ($l in ($t -split '[\r\n]+')) {
+        $s = $l.TrimEnd()
+        if ($s.Trim().Length -eq 0) { continue }
+        if ($s -match '^[\s\-\\|/]+$') { continue }
+        $isProg = $false
+        if ($s -match '[█▒░▓]') { $isProg = $true }
+        elseif (($s.Length -lt 90) -and ($s -match '^\s*(\[[=\s\-#]*\d{1,3}([.,]\d+)?\s*%[=\s\-#]*\]|[A-Za-z .:\-]*\d{1,3}([.,]\d+)?\s*%[A-Za-z .]*)\s*$')) { $isProg = $true }
+        if ($isProg) {
+            if ($prev -and ($out.Count -gt 0)) { $out[$out.Count - 1] = $s } else { [void]$out.Add($s) }
+            $prev = $true
+        } else {
+            [void]$out.Add($s)
+            $prev = $false
+        }
+    }
+    if ($out.Count -gt 80) {
+        $keep = @($out | Select-Object -Last 80)
+        return ((@('...(earlier lines not shown)') + $keep) -join [Environment]::NewLine)
+    }
+    return ($out -join [Environment]::NewLine)
+}
+
+# ------------------------------------------------------------------ main
+$rc = 1
+$cancelled = $false
+try {
+    try { $Host.UI.RawUI.WindowTitle = 'MeshalFix - ' + $Title } catch { }
+    try { [Console]::CursorVisible = $false } catch { }
+    try { Clear-Host } catch { }
+    Put 1 ('  ' + $Title) 'Yellow'
+    if (-not $Cmd) {
+        Put 3 '  Nothing to run.' 'Red'
+        Save-Rc 2
+        Start-Sleep -Seconds 2
+        exit 2
+    }
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = $env:ComSpec
+    $psi.Arguments = '/d /s /c "(' + $Cmd + ') > "' + $Raw + '" 2>&1"'
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardInput = $true
+    try {
+        $Proc = [Diagnostics.Process]::Start($psi)
+        $Proc.StandardInput.Close()
+    } catch {
+        Put 3 ('  Could not start the task: ' + $_.Exception.Message) 'Red'
+        Log ('Could not start: ' + $_.Exception.Message)
+        Save-Rc 1
+        Start-Sleep -Seconds 3
+        exit 1
+    }
+    Log ('Started: ' + $Title)
+    Idle-Msg
+    $lastRead = -1000
+    while (-not $Proc.HasExited) {
+        $ask = $false
+        while ([Console]::KeyAvailable) {
+            $k = [Console]::ReadKey($true)
+            if ($CanCancel -and ($k.Key -eq [ConsoleKey]::C)) { $ask = $true }
+        }
+        if ($ask) {
+            if (Ask-Cancel) {
+                Show-Msg @('  Cancelling - stopping the task...') 'Yellow'
+                Stop-Task
+                $cancelled = $true
+                break
+            }
+        }
+        if (($Sw.ElapsedMilliseconds - $lastRead) -ge 700) {
+            $lastRead = $Sw.ElapsedMilliseconds
+            $v = Get-Pct
+            if ($v -ge 0) { $script:Pct = $v }
+        }
+        $script:Tick++
+        Draw
+        Start-Sleep -Milliseconds 150
+    }
+    try { [void]$Proc.WaitForExit(15000) } catch { }
+    if ($cancelled) { $rc = 1223 }
+    else { try { $rc = [int]$Proc.ExitCode } catch { $rc = 1 } }
+    Log ('Finished: ' + $Title + ' - code ' + $rc + ' - ' + $Sw.Elapsed.ToString('hh\:mm\:ss', $Inv))
+    if ($OutFile) {
+        $txt = ''
+        try { if ($env:FT_RUN_RAW -eq '1') { $txt = (Decode (Read-Bytes 4000000)).TrimStart([char]0xFEFF) } else { $txt = Clean-Text (Decode (Read-Bytes 4000000)) } } catch { $txt = '' }
+        try { [IO.File]::WriteAllText($OutFile, $txt, (New-Object Text.UTF8Encoding $false)) } catch { }
+    }
+    Save-Rc $rc
+    if ($cancelled) {
+        Draw
+        Show-Msg @('  Cancelled.') 'Yellow'
+    } elseif ($rc -eq 0) {
+        Put 3 ('  [' + ($Full * $BarW) + ']  100 %') 'Green'
+        Put 4 ('  Elapsed: ' + $Sw.Elapsed.ToString('hh\:mm\:ss', $Inv)) 'White'
+        Show-Msg @('  Finished.') 'Green'
+    } else {
+        Draw
+        Show-Msg @('  Finished with exit code ' + $rc + '.') 'Yellow'
+    }
+    Start-Sleep -Milliseconds 1200
+}
+finally {
+    try { [Console]::CursorVisible = $true } catch { }
+    try { if (Test-Path -LiteralPath $Raw) { Remove-Item -LiteralPath $Raw -Force -ErrorAction SilentlyContinue } } catch { }
+}
+exit 0
+#RN_END
