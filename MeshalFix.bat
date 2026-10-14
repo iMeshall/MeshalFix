@@ -781,32 +781,15 @@ exit /b
 
 rem ==================================================================
 rem  2) SYSTEM REPAIR - one place for all Windows repairs
-rem     Hub -> Core repair (DISM / SFC / CHKDSK / WMI)
-rem         -> Windows Update fixes
-rem         -> Common Windows fixes
+rem     Core tools (DISM / SFC / CHKDSK / WMI) are listed directly here
+rem     [8] -> Windows Update fixes sub-menu
+rem     [9] -> Common Windows fixes sub-menu
 rem ==================================================================
 :REPAIR_ENTRY
 call :offer_rp
 :REPAIR_HUB
 call :header "2) SYSTEM REPAIR"
-echo   %cD%All Windows repair tools in one place.%cX%
-echo.
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Core repair          %cD%- DISM, SFC, CHKDSK and WMI - fix damaged Windows files%cX%
-echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Windows Update fixes %cD%- Fix updates that fail, hang or will not install%cX%
-echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Common Windows fixes %cD%- Search, printer, Store apps, Start menu, Firewall...%cX%
-echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
-echo.
-set "M="
-set /p "M=  Select an option: "
-if "%M%"=="1" goto :REPAIR_MENU
-if "%M%"=="2" goto :WU_MENU
-if "%M%"=="3" goto :COMMON_MENU
-if "%M%"=="0" goto :MAIN_MENU
-goto :REPAIR_HUB
-
-:REPAIR_MENU
-call :header "2) SYSTEM REPAIR - CORE"
-echo   %cD%These tools can take a long time. Do not close this window while they run.%cX%
+echo   %cD%All Windows repair tools in one place. Some tools can take a long time - do not close this window while they run.%cX%
 echo.
 echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% DISM CheckHealth     %cD%- Quick check - is the Windows image damaged?%cX%
 echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% DISM ScanHealth      %cD%- Deeper scan of the Windows image (takes longer)%cX%
@@ -815,7 +798,9 @@ echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% SFC /scannow         %cD%- Scans and rep
 echo    %cC%[%cW%5%cC%]%cX% %cC%●%cX% FULL repair sequence %cD%- Runs options 1 to 4 in the correct order%cX%
 echo    %cC%[%cW%6%cC%]%cX% %cC%●%cX% CHKDSK               %cD%- Checks a drive for errors and bad sectors%cX%
 echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% WMI Repository Check %cD%- Read-only report - changes nothing%cX%
-echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to the repair menu
+echo    %cC%[%cW%8%cC%]%cX% %cC%●%cX% Windows Update fixes %cD%- Fix updates that fail, hang or will not install%cX%
+echo    %cC%[%cW%9%cC%]%cX% %cC%●%cX% Common Windows fixes %cD%- Search, printer, Store apps, Start menu, Firewall...%cX%
+echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
 echo.
 set "M="
 set /p "M=  Select an option: "
@@ -827,9 +812,12 @@ if "%M%"=="4" set "ACT=sfc_run"
 if "%M%"=="5" set "ACT=full_repair"
 if "%M%"=="6" set "ACT=chkdsk_tool"
 if "%M%"=="7" set "ACT=wmi_repository_check"
-if "%M%"=="0" goto :REPAIR_HUB
+if "%M%"=="8" goto :WU_MENU
+if "%M%"=="9" goto :COMMON_MENU
+if "%M%"=="0" goto :MAIN_MENU
+if not defined ACT goto :REPAIR_HUB
 call :run_tool %ACT%
-goto :REPAIR_MENU
+goto :REPAIR_HUB
 
 rem --- DISM CheckHealth ---
 :dism_check
@@ -2107,6 +2095,8 @@ echo    %cC%[%cW%7%cC%]%cX% %cC%●%cX% Restart Explorer              %cD%- Relo
 echo    %cC%[%cW%8%cC%]%cX% %cC%●%cX% Update Defender definitions   %cD%- Download the newest virus definitions%cX%
 echo    %cC%[%cW%9%cC%]%cX% %cC%●%cX% Reset Windows Firewall        %cD%- Back to default rules (your rules are backed up)%cX%
 echo    %cC%[%cW%10%cC%]%cX% %cC%●%cX% Repair app folder permissions %cD%- Fix access denied errors on one app folder%cX%
+echo    %cC%[%cW%11%cC%]%cX% %cC%●%cX% Sync date and time           %cD%- Wrong clock breaks updates, Store and websites%cX%
+echo    %cC%[%cW%12%cC%]%cX% %cC%●%cX% Check Visual C++ runtimes    %cD%- Read-only - finds the runtime missing behind app crashes%cX%
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to the repair menu
 echo.
 set "M="
@@ -2122,6 +2112,8 @@ if "%M%"=="7" set "ACT=fix_explorer"
 if "%M%"=="8" set "ACT=fix_defender"
 if "%M%"=="9" set "ACT=fix_firewall"
 if "%M%"=="10" set "ACT=fix_permissions"
+if "%M%"=="11" set "ACT=fix_time"
+if "%M%"=="12" set "ACT=check_vcredist"
 if "%M%"=="0" goto :REPAIR_HUB
 call :run_tool %ACT%
 goto :COMMON_MENU
@@ -2282,6 +2274,69 @@ if "%PERM_RC%"=="0" (
     call :err "Permission repair failed. Review the PowerShell output and ACL backup path above."
 )
 call :log "App folder permission repair exit code %PERM_RC%"
+exit /b
+
+rem --- [11] Sync date and time (starts the Windows Time service, then resyncs) ---
+:fix_time
+call :info "Starts the Windows Time service and syncs your clock with the internet time server."
+call :info "A wrong clock breaks Windows Update, the Microsoft Store, sign-ins and website certificates."
+call :info "This fixes the clock only - if the TIME ZONE is wrong, change it in Settings, then Time and language."
+call :step 1 3 "Making sure the Windows Time service is running..."
+net start w32time >nul 2>&1
+call :step 2 3 "Syncing with the time server (needs internet)..."
+w32tm /resync /force >nul 2>&1
+set "TIME_RC=%errorlevel%"
+call :step 3 3 "Checking the result..."
+if "%TIME_RC%"=="0" (
+    call :ok "Clock synchronized. Windows time now: %DATE% %TIME:~0,8%"
+) else (
+    call :err "Sync failed (code %TIME_RC%). Check your internet connection and try again."
+    call :info "If it keeps failing, your PC may be set to a time server that is unreachable."
+)
+exit /b
+
+rem --- [12] Check Visual C++ 2015-2022 runtimes - READ-ONLY, installs nothing ---
+:check_vcredist
+call :info "Read-only check - nothing is installed or changed."
+call :info "Many games and apps need the Visual C++ 2015-2022 runtime. Without it they crash or say a DLL is missing."
+call :step 1 2 "Looking for the runtime files in Windows..."
+set "VC_X64=0"
+set "VC_X86=0"
+set "VC_X64_UPD=0"
+if exist "%SystemRoot%\SysWOW64\cmd.exe" (
+    rem 64-bit Windows: System32 holds the 64-bit files, SysWOW64 holds the 32-bit files
+    if exist "%SystemRoot%\System32\msvcp140.dll" if exist "%SystemRoot%\System32\vcruntime140.dll" set "VC_X64=1"
+    if exist "%SystemRoot%\System32\vcruntime140_1.dll" set "VC_X64_UPD=1"
+    if exist "%SystemRoot%\SysWOW64\msvcp140.dll" if exist "%SystemRoot%\SysWOW64\vcruntime140.dll" set "VC_X86=1"
+    set "VC_OS=64"
+) else (
+    rem 32-bit Windows: only the 32-bit runtime applies
+    if exist "%SystemRoot%\System32\msvcp140.dll" if exist "%SystemRoot%\System32\vcruntime140.dll" set "VC_X86=1"
+    set "VC_OS=32"
+)
+call :step 2 2 "Report"
+set "VC_MISSING=0"
+if "%VC_OS%"=="64" (
+    if "%VC_X64%"=="1" (call :ok "x64 runtime (for 64-bit apps): found") else (
+        call :warn "x64 runtime (for 64-bit apps): MISSING"
+        set "VC_MISSING=1"
+    )
+)
+if "%VC_X86%"=="1" (call :ok "x86 runtime (for 32-bit apps): found") else (
+    call :warn "x86 runtime (for 32-bit apps): MISSING"
+    set "VC_MISSING=1"
+)
+if "%VC_OS%"=="64" if "%VC_X64%"=="1" if "%VC_X64_UPD%"=="0" (
+    call :warn "x64 runtime is old - vcruntime140_1.dll is missing (newer apps need it)."
+    set "VC_MISSING=1"
+)
+if "%VC_MISSING%"=="1" (
+    call :info "Install the official Microsoft packages (install the x64 one AND the x86 one):"
+    call :info "  x64: https://aka.ms/vs/17/release/vc_redist.x64.exe"
+    call :info "  x86: https://aka.ms/vs/17/release/vc_redist.x86.exe"
+) else (
+    call :ok "Visual C++ runtimes look complete."
+)
 exit /b
 
 rem --- Stops Explorer ---
