@@ -165,7 +165,7 @@ call :header "1) CLEANING TOOLS"
 echo   %cC%Space Reclaim Radar%cX% %cD%- estimated space each option can free%cX%
 echo.
 call :radar_row 1 "Deep clean" DEEP "Temp, caches, Disk Cleanup, drive optimize, RAM cache"
-call :radar_row 2 "Thumbnail and icon cache" THUMB "Fixes wrong icons and missing picture previews"
+call :radar_row 2 "Thumbnail and icon cache" THUMB "Full repair: icons, previews, tray, Steam game icons"
 call :radar_row 3 "Orphaned File Scanner" ORPH "Leftovers of removed programs - you review them"
 call :radar_row 4 "Recycle Bin" BIN "Permanently delete everything in the Recycle Bin"
 echo    %cC%[%cW%0%cC%]%cX% %cC%●%cX% Back to main menu
@@ -426,23 +426,85 @@ call :psx
 call :ok "Recycle Bin emptied."
 exit /b
 
-rem --- [3] Thumbnail and icon cache (also used by Common Fixes) ---
+rem --- [2] Thumbnail and icon cache - FULL REPAIR (also used by Common Fixes) ---
+rem --- 1 preview settings, 2 Steam game icons (optional), 3 stop Explorer, 4 delete icon + thumbnail + tray caches, 5 restart Explorer and refresh ---
 :rebuild_icons
-call :ask "Explorer will restart for a moment - open folder windows will close and the screen may flash."
+call :ask "Explorer will restart for a moment - open folder windows will close and the screen may flash. The notification-area (tray) icon history is reset too."
 if "%CONFIRMED%"=="0" (
     call :info "Cancelled."
     exit /b
 )
-call :step 1 4 "Stopping Explorer..."
+
+call :step 1 5 "Checking picture preview settings..."
+set "IC_ADV=HKCU\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced"
+reg query "%IC_ADV%" /v IconsOnly 2>nul | find /i "0x1" >nul
+if not errorlevel 1 (
+    reg add "%IC_ADV%" /v IconsOnly /t REG_DWORD /d 0 /f >nul 2>&1
+    call :ok "Picture previews were turned OFF in Folder Options - turned back ON."
+) else (
+    call :info "Picture previews are enabled."
+)
+reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer" /v DisableThumbnails 2>nul | find /i "0x1" >nul
+if not errorlevel 1 call :warn "A policy (HKCU) disables thumbnails. It was NOT changed - remove it yourself if this PC is not managed."
+reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\Explorer" /v DisableThumbnails 2>nul | find /i "0x1" >nul
+if not errorlevel 1 call :warn "A policy (HKLM) disables thumbnails. It was NOT changed - remove it yourself if this PC is not managed."
+
+call :step 2 5 "Repairing blank Steam game icons..."
+set "IC_DOSTEAM=1"
+if defined ALLMODE set "IC_DOSTEAM=0"
+if "!IC_DOSTEAM!"=="1" (
+    call :confirm "Also restore missing icons of Steam game shortcuts (Desktop and Start Menu)? This needs internet and can take a minute."
+    if "!CONFIRMED!"=="0" set "IC_DOSTEAM=0"
+)
+if "!IC_DOSTEAM!"=="1" (
+    call :ic_extract
+    if exist "!FT_ICPS!" (
+        call :info "Looking for Steam shortcuts with a missing icon..."
+        type nul > "%FT_OUT%"
+        start "" /wait /min cmd /c powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "!FT_ICPS!" ^> "%FT_OUT%" 2^>^&1
+        type "%FT_OUT%" | findstr /v /b /c:"IC_SUMMARY="
+        for /f "usebackq tokens=1,* delims==" %%A in (`findstr /b /c:"IC_SUMMARY=" "%FT_OUT%"`) do call :log "Steam icons fixed/substitute/failed: %%B"
+    ) else (
+        call :warn "Could not prepare the Steam icon engine - skipped."
+    )
+) else (
+    call :info "Steam icon repair skipped."
+)
+
+set "IC_DIR=%LocalAppData%\Microsoft\Windows\Explorer"
+set "FT_PS=$s=0; $d=Join-Path $env:LocalAppData 'Microsoft\Windows\Explorer'; Get-ChildItem -LiteralPath $d -Force -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -match '^(iconcache|thumbcache)_.*\.db$' } | ForEach-Object { $s += $_.Length }; $f=Join-Path $env:LocalAppData 'IconCache.db'; if(Test-Path -LiteralPath $f){ $s += (Get-Item -Force -LiteralPath $f).Length }; ([math]::Round($s/1MB,1)).ToString([cultureinfo]::InvariantCulture)"
+set "IC_MB=0"
+call :psx
+for /f "usebackq delims=" %%S in ("%FT_OUT%") do set "IC_MB=%%S"
+
+call :step 3 5 "Stopping Explorer..."
 call :stop_explorer
-call :step 2 4 "Deleting icon cache files..."
+
+call :step 4 5 "Deleting icon, thumbnail and tray icon caches..."
 del /f /q /a "%LocalAppData%\IconCache.db" >nul 2>&1
-del /f /q /a "%LocalAppData%\Microsoft\Windows\Explorer\iconcache_*.db" >nul 2>&1
-call :step 3 4 "Deleting thumbnail cache files..."
-del /f /q /a "%LocalAppData%\Microsoft\Windows\Explorer\thumbcache_*.db" >nul 2>&1
-call :step 4 4 "Starting Explorer again..."
+del /f /q /a "%IC_DIR%\iconcache_*.db" >nul 2>&1
+del /f /q /a "%IC_DIR%\thumbcache_*.db" >nul 2>&1
+reg delete "HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\TrayNotify" /v IconStreams /f >nul 2>&1
+reg delete "HKCU\Software\Classes\Local Settings\Software\Microsoft\Windows\CurrentVersion\TrayNotify" /v PastIconsStream /f >nul 2>&1
+call :log "Icon and thumbnail caches deleted (about !IC_MB! MB)"
+
+call :step 5 5 "Starting Explorer again and refreshing icons..."
 call :start_explorer
-call :ok "Icon and thumbnail caches cleared. Windows rebuilds them automatically."
+ie4uinit.exe -ClearIconCache >nul 2>&1
+ie4uinit.exe -show >nul 2>&1
+call :ok "Done - about !IC_MB! MB of icon and thumbnail cache cleared. Windows rebuilds them automatically."
+call :info "If some icons are still blank, restart Windows once - locked cache files are replaced at the next boot."
+exit /b
+
+rem --- Cuts the icon repair engine (block at the end of this file) into a temp .ps1 once per session ---
+:ic_extract
+set "FT_SELF=%SCRIPT%"
+set "FT_ICPS=%TEMP%\FixToolkit_icons.ps1"
+if defined IC_READY if exist "%FT_ICPS%" exit /b
+del /f /q "%FT_ICPS%" >nul 2>&1
+set "FT_PS=$t=[IO.File]::ReadAllText($env:FT_SELF,[Text.Encoding]::UTF8); $i=$t.LastIndexOf('#IC_'+'BEGIN'); $j=$t.LastIndexOf('#IC_'+'END'); if($i -lt 0 -or $j -le $i){exit 2}; $b=$t.Substring($i+9,$j-$i-9); [IO.File]::WriteAllText($env:FT_ICPS,$b,(New-Object Text.UTF8Encoding $true))"
+call :psx
+if exist "%FT_ICPS%" set "IC_READY=1"
 exit /b
 
 rem --- Part of deep clean: error reports, crash dumps and memory dumps ---
@@ -2085,7 +2147,7 @@ rem  2) SYSTEM REPAIR - COMMON WINDOWS FIXES
 rem ==================================================================
 :COMMON_MENU
 call :header "2) SYSTEM REPAIR - COMMON FIXES"
-echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Icon and thumbnail cache      %cD%- Fixes wrong icons and missing previews%cX%
+echo    %cC%[%cW%1%cC%]%cX% %cC%●%cX% Icon and thumbnail cache      %cD%- Full repair: icons, previews, tray, Steam icons%cX%
 echo    %cC%[%cW%2%cC%]%cX% %cC%●%cX% Fix Windows Search            %cD%- Reset the index when search is slow or empty%cX%
 echo    %cC%[%cW%3%cC%]%cX% %cC%●%cX% Fix Print Spooler             %cD%- Clear a stuck print queue%cX%
 echo    %cC%[%cW%4%cC%]%cX% %cC%●%cX% Re-register ALL Store apps    %cD%- Fixes apps that will not open (slow)%cX%
@@ -8702,6 +8764,185 @@ if ($Mode -eq 'ORPHANS') {
     exit 0
 }
 #CL_END
+#IC_BEGIN
+# ====================================================================
+#  FixToolkit icon repair engine (Steam shortcut icons).
+#  Started only by "Thumbnail and icon cache" (Cleaning Tools option 2
+#  and System Repair > Common Fixes option 1).
+#  Finds Steam .url shortcuts whose icon file is missing or empty and
+#  restores the icon. Tiers: 1 exact re-fetch from Steam CDN, 2 Steam
+#  local library cache, 3 SteamGridDB (only if STEAMGRIDDB_API_KEY is
+#  set), 4 square-cropped store banner. Never touches the .url file.
+#  ASCII only on purpose. Prints plain lines; last line is IC_SUMMARY.
+# ====================================================================
+$ErrorActionPreference = 'SilentlyContinue'
+try { [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false } catch { }
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch { }
+$ProgressPreference = 'SilentlyContinue'
+
+function Say([string]$m) { Write-Output $m }
+
+function Test-IsIco([byte[]]$b) {
+    return ($b -and $b.Length -gt 22 -and $b[0] -eq 0 -and $b[1] -eq 0 -and $b[2] -eq 1 -and $b[3] -eq 0)
+}
+
+# Wraps any image file into a real .ico (256x256 PNG-in-ICO, supported by Windows Vista and newer)
+function Convert-ToIco([string]$SrcFile, [string]$DstFile) {
+    try {
+        Add-Type -AssemblyName System.Drawing
+        $img = [System.Drawing.Image]::FromFile($SrcFile)
+        $side = [Math]::Min($img.Width, $img.Height)
+        $sx = [int](($img.Width - $side) / 2)
+        $sy = [int](($img.Height - $side) / 2)
+        $bmp = New-Object System.Drawing.Bitmap(256, 256)
+        $g = [System.Drawing.Graphics]::FromImage($bmp)
+        $g.DrawImage($img, (New-Object System.Drawing.Rectangle(0, 0, 256, 256)), (New-Object System.Drawing.Rectangle($sx, $sy, $side, $side)), 2)
+        $ms = New-Object System.IO.MemoryStream
+        $bmp.Save($ms, (New-Object System.Drawing.Imaging.ImageFormat([Guid]'b96b3caf-0728-11d3-9d7b-0000f81ef32e')))
+        $png = $ms.ToArray()
+        $g.Dispose(); $bmp.Dispose(); $img.Dispose(); $ms.Dispose()
+        $out = New-Object System.IO.MemoryStream
+        $w = New-Object System.IO.BinaryWriter($out)
+        $w.Write([uint16]0); $w.Write([uint16]1); $w.Write([uint16]1)
+        $w.Write([byte]0); $w.Write([byte]0); $w.Write([byte]0); $w.Write([byte]0)
+        $w.Write([uint16]1); $w.Write([uint16]32)
+        $w.Write([uint32]$png.Length); $w.Write([uint32]22)
+        $w.Write($png)
+        $w.Flush()
+        [IO.File]::WriteAllBytes($DstFile, $out.ToArray())
+        $w.Close()
+        return $true
+    } catch { return $false }
+}
+
+# Makes sure the file written to $Target is usable for a .ico shortcut icon
+function Finish-Icon([string]$Tmp, [string]$Target) {
+    $bytes = [IO.File]::ReadAllBytes($Tmp)
+    $wantsIco = ([IO.Path]::GetExtension($Target) -ieq '.ico')
+    if ($wantsIco -and -not (Test-IsIco $bytes)) {
+        if (Convert-ToIco $Tmp $Target) { return $true }
+        return $false
+    }
+    Copy-Item -LiteralPath $Tmp -Destination $Target -Force
+    return (Test-Path -LiteralPath $Target)
+}
+
+function Get-SteamRoot {
+    $c = @()
+    $r = (Get-ItemProperty 'HKCU:\Software\Valve\Steam' -ErrorAction SilentlyContinue).SteamPath
+    if ($r) { $c += ($r -replace '/', '\') }
+    $r2 = (Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Valve\Steam' -ErrorAction SilentlyContinue).InstallPath
+    if ($r2) { $c += $r2 }
+    if ($env:ProgramFiles) { $c += (Join-Path $env:ProgramFiles 'Steam') }
+    if (${env:ProgramFiles(x86)}) { $c += (Join-Path ${env:ProgramFiles(x86)} 'Steam') }
+    foreach ($p in $c) { if ($p -and (Test-Path (Join-Path $p 'steam.exe'))) { return $p } }
+    foreach ($p in $c) { if ($p -and (Test-Path $p)) { return $p } }
+    return $null
+}
+
+function Find-CachedIcon([string]$Root, [string]$AppId) {
+    if (-not $Root) { return $null }
+    foreach ($e in 'ico', 'png', 'jpg', 'tga') {
+        $a = Join-Path $Root ('appcache\librarycache\' + $AppId + '_icon.' + $e)
+        if (Test-Path -LiteralPath $a) { return $a }
+        $b = Join-Path $Root ('appcache\librarycache\' + $AppId + '\icon.' + $e)
+        if (Test-Path -LiteralPath $b) { return $b }
+    }
+    return $null
+}
+
+function Get-Web([string]$Url, [string]$Out) {
+    try {
+        Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Out -TimeoutSec 25 -UserAgent 'Mozilla/5.0' -ErrorAction Stop
+        return ((Test-Path -LiteralPath $Out) -and ((Get-Item -LiteralPath $Out).Length -gt 100))
+    } catch { return $false }
+}
+
+function Repair-One([string]$Url) {
+    $lines = Get-Content -LiteralPath $Url -ErrorAction SilentlyContinue
+    $u = $lines | Where-Object { $_ -match '^\s*URL\s*=' } | Select-Object -First 1
+    $i = $lines | Where-Object { $_ -match '^\s*IconFile\s*=' } | Select-Object -First 1
+    if (-not $u -or -not $i) { return 'SKIP' }
+    $uv = ($u -split '=', 2)[1].Trim()
+    if ($uv -notmatch '^steam://rungameid/(\d+)') { return 'SKIP' }
+    $appId = $Matches[1]
+    $icon = ($i -split '=', 2)[1].Trim()
+    if ([string]::IsNullOrWhiteSpace($icon)) { return 'SKIP' }
+
+    if ((Test-Path -LiteralPath $icon) -and ((Get-Item -LiteralPath $icon).Length -gt 0)) { return 'OK' }
+
+    Say ('  ' + [IO.Path]::GetFileName($Url) + '  (AppID ' + $appId + ') - icon is missing')
+    $dir = Split-Path -Path $icon -Parent
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    $tmp = Join-Path $env:TEMP ('ft_icon_' + $appId + '.tmp')
+    Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+
+    # Tier 1: exact re-fetch (filename is read from the shortcut, never guessed)
+    $name = Split-Path -Path $icon -Leaf
+    if (Get-Web ('https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/' + $appId + '/' + $name) $tmp) {
+        if (Finish-Icon $tmp $icon) { Say '      FIXED - original icon downloaded from Steam'; Remove-Item $tmp -Force -ErrorAction SilentlyContinue; return 'FIXED' }
+    }
+    # Tier 2: Steam's own local library cache
+    $root = Get-SteamRoot
+    $cached = Find-CachedIcon $root $appId
+    if ($cached) {
+        if (Finish-Icon $cached $icon) { Say '      FIXED - genuine icon copied from the Steam local cache'; return 'FIXED' }
+    }
+    # Tier 3: SteamGridDB (needs a free key in STEAMGRIDDB_API_KEY)
+    if ($env:STEAMGRIDDB_API_KEY) {
+        try {
+            $r = Invoke-RestMethod -Uri ('https://www.steamgriddb.com/api/v2/icons/steam/' + $appId) -Headers @{ Authorization = ('Bearer ' + $env:STEAMGRIDDB_API_KEY) } -TimeoutSec 25 -ErrorAction Stop
+            if ($r.data -and $r.data.Count -gt 0 -and $r.data[0].url) {
+                if (Get-Web $r.data[0].url $tmp) {
+                    if (Finish-Icon $tmp $icon) { Say '      FIXED - icon from SteamGridDB (community icon)'; Remove-Item $tmp -Force -ErrorAction SilentlyContinue; return 'FIXED' }
+                }
+            }
+        } catch { }
+    }
+    # Tier 4: store banner, cropped to a square (a substitute, not the real icon)
+    $bt = Join-Path $env:TEMP ('ft_banner_' + $appId + '.jpg')
+    if (Get-Web ('https://cdn.cloudflare.steamstatic.com/steam/apps/' + $appId + '/header.jpg') $bt) {
+        $ok = $false
+        if ([IO.Path]::GetExtension($icon) -ieq '.ico') { $ok = Convert-ToIco $bt $icon }
+        if ($ok) { Say '      PARTIAL - real icon not found anywhere; used the cropped store banner instead'; Remove-Item $bt -Force -ErrorAction SilentlyContinue; return 'PARTIAL' }
+        Remove-Item $bt -Force -ErrorAction SilentlyContinue
+    }
+    Say '      FAILED - no icon source worked for this game'
+    return 'FAILED'
+}
+
+# ---- Find the shortcuts ----
+$dirs = @()
+try { $dirs += [Environment]::GetFolderPath('Desktop') } catch { }
+$dirs += (Join-Path $env:USERPROFILE 'Desktop')
+if ($env:PUBLIC) { $dirs += (Join-Path $env:PUBLIC 'Desktop') }
+if ($env:APPDATA) { $dirs += (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Steam') }
+if ($env:ProgramData) { $dirs += (Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\Steam') }
+$dirs = @($dirs | Where-Object { $_ } | Select-Object -Unique)
+
+$files = @()
+foreach ($d in $dirs) {
+    if (Test-Path -LiteralPath $d -PathType Container) {
+        $files += Get-ChildItem -LiteralPath $d -Filter '*.url' -File -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName
+    }
+}
+$files = @($files | Select-Object -Unique)
+
+$n = @{ OK = 0; FIXED = 0; PARTIAL = 0; FAILED = 0; SKIP = 0 }
+foreach ($f in $files) { $n[(Repair-One $f)]++ }
+
+$steamTotal = $n.OK + $n.FIXED + $n.PARTIAL + $n.FAILED
+if ($steamTotal -eq 0) {
+    Say '  No Steam game shortcuts were found on the Desktop or in the Start Menu Steam folder.'
+} else {
+    Say ('  Steam shortcuts checked: ' + $steamTotal + '  |  already fine: ' + $n.OK + '  |  fixed: ' + $n.FIXED + '  |  substitute banner: ' + $n.PARTIAL + '  |  failed: ' + $n.FAILED)
+    if ($n.FAILED -gt 0 -and -not $env:STEAMGRIDDB_API_KEY) {
+        Say '  Tip: set the STEAMGRIDDB_API_KEY environment variable (free key from steamgriddb.com) to give failed games one more icon source.'
+    }
+}
+Say ('IC_SUMMARY=' + $n.FIXED + '/' + $n.PARTIAL + '/' + $n.FAILED)
+exit 0
+#IC_END
 #RN_BEGIN
 # ====================================================================
 #  FixToolkit progress runner. Started by the :run_long helper in its own window.
